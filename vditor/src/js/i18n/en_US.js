@@ -170,6 +170,7 @@ window.VditorI18n = {
   'imageMaxHeight': 'Max Height',
     'pageWidth': 'Page Width',
     'typewriterMode': 'Typewriter Mode',
+    'blockLineNumbers': 'Block Line Numbers',
     'boldColor': 'Bold Color',
   'boldColorDefault': 'Default',
   'boldColorPlain': 'Plain',

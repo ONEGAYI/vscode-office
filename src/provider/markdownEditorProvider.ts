@@ -57,6 +57,8 @@ const MARKDOWN_SYNC_CONFIG_KEYS = [
     'editorTheme',
     'codeMirrorTheme',
     'mermaidTheme',
+    'markdownBlockLineNumbers',
+    'markdownHeadingBadges',
 ] as const;
 
 type MarkdownSyncConfigKey = typeof MARKDOWN_SYNC_CONFIG_KEYS[number];
@@ -480,6 +482,20 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             if (mode === "wysiwyg" || mode === "ir") {
                 Global.updateConfig("editMode", mode);
             }
+        }).on("blockLineNumbers", async (enabled: unknown) => {
+            if (typeof enabled !== "boolean") {
+                return;
+            }
+            // Global.updateConfig 只写 global 作用域：当 workspace 存在覆盖时
+            // effective 值不变、onDidChangeConfiguration 不触发，开关静默失效。
+            // 有 workspace 覆盖时必须写回 workspace 作用域
+            const config = vscode.workspace.getConfiguration("vscode-office");
+            const inspect = config.inspect("markdownBlockLineNumbers");
+            const target = inspect?.workspaceValue !== undefined
+                ? vscode.ConfigurationTarget.Workspace
+                : vscode.ConfigurationTarget.Global;
+            const newValue = inspect?.defaultValue === enabled ? undefined : enabled;
+            await config.update("markdownBlockLineNumbers", newValue, target);
         }).on("img", async (payload) => {
             const imgData: string = typeof payload === 'string' ? payload : payload.data;
             const ext: string = typeof payload === 'string' ? 'png' : (payload.ext || 'png');
@@ -697,6 +713,8 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             editorTheme: configuration.get<string>("editorTheme", "Auto"),
             codeMirrorTheme: configuration.get<string>("codeMirrorTheme", "Auto"),
             mermaidTheme: configuration.get<string>("mermaidTheme", "Auto"),
+            markdownBlockLineNumbers: configuration.get<boolean>("markdownBlockLineNumbers", true),
+            markdownHeadingBadges: configuration.get<boolean>("markdownHeadingBadges", true),
             markdown: {
                 math: {
                     macros: markdownConfiguration.get<Record<string, string>>("math.macros", {}),

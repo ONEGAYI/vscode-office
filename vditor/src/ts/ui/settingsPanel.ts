@@ -35,6 +35,10 @@ import { getCodeFontFamilyOptions } from "../util/fontFamilyOptions";
 
 export const SETTINGS_PANEL_CLASS = "vditor-settings-panel";
 
+/** Settings 面板行号开关的 data-toggle-key 标识（非 localStorage key：
+ *  行号开关绑定宿主配置，不落 vditor-global-settings，见 Settings.ts） */
+export const BLOCK_LINE_NUMBERS_KEY = "blockLineNumbers";
+
 const EDIT_MODES = [
     { id: "wysiwyg", label: "Visual" },
     { id: "ir", label: "Source" },
@@ -297,6 +301,8 @@ export const buildSettingsPanelHTML = (vditor: IVditor) => {
     const imgMaxHeight = getGlobalLocalStorageSetting<number>(IMAGE_MAX_HEIGHT_KEY, IMAGE_MAX_HEIGHT_DEFAULT);
     const codeBlockMaxHeight = getGlobalLocalStorageSetting<string>(CODE_BLOCK_MAX_HEIGHT_KEY, CODE_BLOCK_MAX_HEIGHT_DEFAULT) ?? CODE_BLOCK_MAX_HEIGHT_DEFAULT;
     const typewriterMode = getGlobalLocalStorageSetting<boolean>(TYPEWRITER_MODE_KEY, false) === true;
+    // 初值来自 options（宿主 VS Code 配置透传），与 localStorage 无关
+    const blockLineNumbers = vditor.options.blockLineNumbers !== false;
     return `<div class="${SETTINGS_PANEL_CLASS}">
         <div class="${SETTINGS_PANEL_CLASS}__section">
             <div class="${SETTINGS_PANEL_CLASS}__title">Edit Mode</div>
@@ -317,6 +323,7 @@ export const buildSettingsPanelHTML = (vditor: IVditor) => {
                 ${buildDropdownHTML(PAGE_WIDTH_KEY, i18n.pageWidth, PAGE_WIDTH_OPTIONS, pageWidth)}
                 ${buildLineHeightStepperHTML(lineHeight)}
                 ${buildToggleHTML(TYPEWRITER_MODE_KEY, i18n.typewriterMode ?? "Typewriter Mode", typewriterMode)}
+                ${buildToggleHTML(BLOCK_LINE_NUMBERS_KEY, i18n.blockLineNumbers ?? "Block Line Numbers", blockLineNumbers)}
             </div>
         </div>
         <div class="${SETTINGS_PANEL_CLASS}__section">
@@ -343,6 +350,14 @@ export const refreshSettingsPanel = (panelElement: HTMLElement, vditor: IVditor)
         const isCurrent = mode === vditor.currentMode;
         button.classList.toggle(`${SETTINGS_PANEL_CLASS}__segment--current`, isCurrent);
         button.setAttribute("aria-pressed", String(isCurrent));
+    }
+    // 行号开关绑定宿主配置（经 options 下发），面板重开/Reset 重建后
+    // 需按当前 options 刷新显示态，否则显示过期值
+    const lineNumbersToggle = panelElement.querySelector(`[data-toggle-key="${BLOCK_LINE_NUMBERS_KEY}"]`);
+    if (lineNumbersToggle) {
+        const on = vditor.options.blockLineNumbers !== false;
+        lineNumbersToggle.classList.toggle(`${SETTINGS_PANEL_CLASS}__toggle--on`, on);
+        lineNumbersToggle.setAttribute("aria-checked", String(on));
     }
 };
 

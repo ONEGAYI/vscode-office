@@ -7,7 +7,8 @@ handler.on("open", async (md) => {
   window.__officeMarkdownFileName = fileName || 'Note';
   const {
     language, isWeb, isDev, markdown,
-    editMode, editorTheme, codeMirrorTheme, mermaidTheme
+    editMode, editorTheme, codeMirrorTheme, mermaidTheme,
+    markdownBlockLineNumbers, markdownHeadingBadges,
   } = config;
   if (isWeb) {
     document.body.classList.add('is-web')
@@ -30,6 +31,7 @@ handler.on("open", async (md) => {
     editorTheme,
     codeMirrorTheme,
     mermaidTheme,
+    blockLineNumbers: markdownBlockLineNumbers !== false,
     lang: mapVscodeLanguageToVditorLang(language),
     tab: '\t',
     toolbar: await getToolbar(rootPath, () => {
@@ -79,6 +81,10 @@ handler.on("open", async (md) => {
     changeEditMode(mode) {
       handler.emit('editMode', mode)
     },
+    onChangeBlockLineNumbers(enabled) {
+      // 面板开关回传扩展侧写配置；配置变更广播回来经 markdownConfig 生效
+      handler.emit('blockLineNumbers', enabled)
+    },
     onSettingsChange(settings) {
       handler.emit('syncViewerSettings', settings)
     },
@@ -120,6 +126,8 @@ handler.on("open", async (md) => {
     after() {
       const { viewerSettings } = md;
       ListMarkerLive.install(editor);
+      document.body.classList.toggle('vmd-heading-badges-off', markdownHeadingBadges === false);
+      BlockLineNumbers.install(editor, { enabled: markdownBlockLineNumbers !== false });
       observeWorkspaceAbsoluteImages(document.getElementById('vditor'), workspaceBaseUrl);
       if (viewerSettings?.enabled) {
         editor.setViewerSettingsSyncEnabled(true);
@@ -145,6 +153,17 @@ handler.on("open", async (md) => {
         }
         if (update.editMode !== undefined) {
           editor.switchEditMode(update.editMode);
+        }
+        if (update.markdownBlockLineNumbers !== undefined) {
+          // 同步 options：Settings 面板 toggle 初值与 Reset 重建都读它，
+          // 不回写会显示过期状态（下次点击方向与预期相反）
+          if (editor.vditor) {
+            editor.vditor.options.blockLineNumbers = update.markdownBlockLineNumbers !== false;
+          }
+          BlockLineNumbers.setEnabled(update.markdownBlockLineNumbers !== false);
+        }
+        if (update.markdownHeadingBadges !== undefined) {
+          document.body.classList.toggle('vmd-heading-badges-off', update.markdownHeadingBadges === false);
         }
       });
       handler.on("update", content => {

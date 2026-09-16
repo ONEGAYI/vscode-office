@@ -170,7 +170,14 @@ const updatePreview = (vditor: IVditor, previewMathEl: HTMLElement, latexText: s
 };
 
 const syncCodeFromView = (binding: InlineMathBinding) => {
-    binding.codeEl.textContent = Constants.ZWSP + binding.view.state.doc.toString();
+    // 脏检查：textContent 同值赋值也按 "replace all" 产生 childList
+    // mutation，会自激励编辑面级 MutationObserver（行号模块逐帧
+    // getValue→flushInlineMathToSyncCode→此处——见 flushCodeMirrorToSyncCode
+    // 同款修复）
+    const next = Constants.ZWSP + binding.view.state.doc.toString();
+    if (binding.codeEl.textContent !== next) {
+        binding.codeEl.textContent = next;
+    }
 };
 
 const schedulePreviewUpdate = (vditor: IVditor, binding: InlineMathBinding) => {

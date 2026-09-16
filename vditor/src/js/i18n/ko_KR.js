@@ -138,6 +138,7 @@ window.VditorI18n = {
   'imageMaxHeight': '최대 높이',
     'pageWidth': '페이지 너비',
     'typewriterMode': '타자기 모드',
+    'blockLineNumbers': '블록 줄 번호',
   'boldColor': '굵은 글씨 색',
   'boldColorDefault': '기본',
   'boldColorPlain': '본문색',

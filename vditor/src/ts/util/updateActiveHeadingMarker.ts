@@ -1,5 +1,4 @@
 import {isInsideCodeBlockChrome, isInsideCodeMirror} from "../codeBlock/codeMirrorManager";
-import {clearBlockMarkerTop, syncBlockMarkerTop} from "./blockMarker";
 import {hasClosestByHeadings} from "./hasClosestByHeadings";
 import {getEditorRange, selectIsEditor} from "./selection";
 
@@ -27,7 +26,6 @@ export const clearActiveHeadingMarker = (vditor: IVditor) => {
     }
     const editorElement = vditor[vditor.currentMode].element;
     for (const item of editorElement.querySelectorAll(`.${ACTIVE_CLASS}`)) {
-        clearBlockMarkerTop(item as HTMLElement);
         item.classList.remove(ACTIVE_CLASS);
     }
 };
@@ -56,7 +54,6 @@ export const updateActiveHeadingMarker = (vditor: IVditor) => {
         }
         clearActiveHeadingMarker(vditor);
         headingElement.classList.add(ACTIVE_CLASS);
-        syncBlockMarkerTop(headingElement);
         return;
     }
     if (currentActive) {

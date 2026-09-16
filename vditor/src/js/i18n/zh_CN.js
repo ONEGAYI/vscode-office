@@ -170,6 +170,7 @@ window.VditorI18n = {
   'imageMaxHeight': '最大高度',
     'pageWidth': '页面宽度',
     'typewriterMode': '打字机模式',
+    'blockLineNumbers': '段落行号',
     'boldColor': '粗体颜色',
   'boldColorDefault': '默认',
   'boldColorPlain': '正文色',

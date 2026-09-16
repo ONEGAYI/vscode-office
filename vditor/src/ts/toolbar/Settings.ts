@@ -2,6 +2,7 @@ import {
     buildSettingsPanelHTML,
     refreshSettingsPanel,
     SETTINGS_PANEL_CLASS,
+    BLOCK_LINE_NUMBERS_KEY,
 } from "../ui/settingsPanel";
 import { getEventName } from "../util/compatibility";
 import { setEditMode } from "./EditMode";
@@ -249,9 +250,17 @@ export class Settings extends MenuItem {
                 const next = !toggleTrigger.classList.contains(`${SETTINGS_PANEL_CLASS}__toggle--on`);
                 toggleTrigger.classList.toggle(`${SETTINGS_PANEL_CLASS}__toggle--on`, next);
                 toggleTrigger.setAttribute("aria-checked", String(next));
+                // 行号开关绑定宿主配置（单一数据源）：回调宿主持久化，配置变更
+                // 广播回来后经 markdownConfig 生效，不落 localStorage
+                if (key === BLOCK_LINE_NUMBERS_KEY) {
+                    vditor.options.onChangeBlockLineNumbers?.(next);
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
                 setGlobalLocalStorageSetting(key, next ? true : undefined);
                 if (key === TYPEWRITER_MODE_KEY) {
-                    applyTypewriterModeClass(vditor.element, next);
+                    applyTypewriterModeClass(vditor.element);
                 }
                 event.preventDefault();
                 event.stopPropagation();
