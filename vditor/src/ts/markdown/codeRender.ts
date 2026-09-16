@@ -13,7 +13,7 @@ export const codeRender = (element: HTMLElement) => {
             return;
         }
 
-        if (e.style.maxHeight.indexOf("px") > -1) {
+        if (e.previousElementSibling?.classList.contains("vditor-copy")) {
             return;
         }
 
@@ -40,6 +40,5 @@ onclick="this.previousElementSibling.select();document.execCommand('copy');this.
         divElement.insertAdjacentElement("afterbegin", textarea);
 
         e.before(divElement);
-        e.style.maxHeight = (window.outerHeight - 40) + "px";
     });
 };
