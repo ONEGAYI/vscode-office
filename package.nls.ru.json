@@ -14,6 +14,7 @@
 	"ext.markdown.exportSuccess": "Экспорт Markdown в $1 выполнен успешно!",
 	"ext.markdown.noChromium": "Chromium не найден, экспорт не удался.",
 	"ext.markdown.noClipboardImage": "В буфере обмена нет изображения.",
+	"ext.markdown.linkSchemeBlocked": "Заблокирована ссылка с неподдерживаемой схемой: $1",
 	"ext.markdown.noPasteDirectory": "Вставка каталогов не поддерживается.",
 	"ext.markdown.installXclip": "Сначала необходимо установить команду xclip.",
 	"ext.markdown.wikilinkNotFound": "Цель викиссылки не найдена: $1",

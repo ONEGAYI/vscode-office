@@ -14,6 +14,7 @@
 	"ext.markdown.exportSuccess": "Exportação de Markdown para $1 concluída com sucesso!",
 	"ext.markdown.noChromium": "Chromium não encontrado, falha na exportação.",
 	"ext.markdown.noClipboardImage": "Não há imagem na área de transferência.",
+	"ext.markdown.linkSchemeBlocked": "Link com esquema não suportado bloqueado: $1",
 	"ext.markdown.noPasteDirectory": "Não é suportado colar diretórios.",
 	"ext.markdown.installXclip": "Você precisa instalar o comando xclip primeiro.",
 	"ext.markdown.wikilinkNotFound": "Destino do wikilink não encontrado: $1",

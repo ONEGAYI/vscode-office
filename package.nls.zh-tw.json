@@ -14,6 +14,7 @@
 	"ext.markdown.exportSuccess": "匯出 Markdown 為 $1 成功！",
 	"ext.markdown.noChromium": "未找到 Chromium，匯出失敗。",
 	"ext.markdown.noClipboardImage": "剪貼簿中沒有圖片。",
+	"ext.markdown.linkSchemeBlocked": "已攔截不支援的連結協定：$1",
 	"ext.markdown.noPasteDirectory": "不支援貼上目錄。",
 	"ext.markdown.installXclip": "請先安裝 xclip 命令。",
 	"ext.markdown.wikilinkNotFound": "找不到雙鏈目標：$1",
