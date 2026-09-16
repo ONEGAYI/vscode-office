@@ -136,11 +136,23 @@ const resetEl = (ctx) => ctx.document.querySelector(`.vditor-${ctx.mode} .vditor
 /** 顶层段落块（p，不含标题/哨兵 span），按文档序 */
 const paras = (ctx) => Array.from(resetEl(ctx).querySelectorAll('p[data-block="0"]'));
 
-/** 跨块选区：从 start 块文本开头选到 end 块文本末尾，并通知 selectionchange */
+/** 深入到元素内首个文本节点（ir 的 h1 首子节点是 marker span 元素） */
+function deepestFirstChild(el) {
+  let node = el.firstChild || el;
+  while (node && node.nodeType === 1 && node.firstChild) {
+    node = node.firstChild;
+  }
+  return node;
+}
+
+/** 跨块选区：从 start 块文本开头选到 end 块文本末尾，并通知 selectionchange。
+ *  jsdom 限制（25.x 实测）：startContainer 为元素节点 offset 0 时
+ *  range.insertNode(wbr)（listToggle 入口）会错误重定位 endContainer，
+ *  使批量分支静默退回单块路径——起点/终点均深入到首个文本节点 */
 function selectFromTo(ctx, startEl, endEl) {
   const { window, document } = ctx;
-  const startNode = startEl.firstChild || startEl;
-  const endNode = endEl.firstChild || endEl;
+  const startNode = deepestFirstChild(startEl);
+  const endNode = deepestFirstChild(endEl);
   const sel = window.getSelection();
   const range = document.createRange();
   range.setStart(startNode, 0);
@@ -535,5 +547,133 @@ describe('list-ops: batch list in ir mode (I)', { skip: DIST_READY ? false : 'vd
     const md = ctx.window.vditor.getValue();
     assert.match(md, /^[-*] first para$/m);
     assert.match(md, /^[-*] second para$/m);
+  });
+});
+
+// ── N/H/Q/R：审查补强（嵌套子列表 / heading / 单列表回退 / 引用隔断） ────
+
+describe('list-ops: review hardening (N/H/Q/R)', { skip: DIST_READY ? false : 'vditor/dist 未构建：先在 vditor/ 目录执行构建' }, () => {
+  it('N1: 转换为普通列表时嵌套子列表的 checkbox 保留', async () => {
+    const t = await boot('- a\n  - [ ] b\n\npara\n');
+    try {
+      const reset = resetEl(t);
+      const ul = reset.querySelector('ul');
+      const p = reset.querySelector('p[data-block="0"]');
+      selectFromTo(t, ul.querySelector('li'), p);
+      clickToolbar(t, 'list');
+      await settle();
+
+      const newUl = reset.querySelector('ul');
+      const topLis = newUl.querySelectorAll(':scope > li');
+      assert.equal(topLis.length, 2, '顶层 li：a 与 para');
+      assert.equal(newUl.querySelectorAll(':scope > li > input').length, 0,
+        '顶层 li 不应有 checkbox');
+      const nested = newUl.querySelector('ul li ul li');
+      assert.ok(nested, '嵌套子列表应保留');
+      assert.ok(nested.querySelector(':scope > input'), '嵌套 li 的 checkbox 不应被误删');
+      const md = t.window.vditor.getValue();
+      assert.match(md, /- \[ \] b/, '任务标记应保留在源码');
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('N2: 取消含嵌套子列表的目标列表 → 子列表提升、无空段落残留', async () => {
+    const t = await boot('- a\n  - a1\n\n* b\n');
+    try {
+      const reset = resetEl(t);
+      // 只取编辑面直接子级的列表（嵌套子列表也是 ul，后代查询会错位）
+      const topUls = Array.from(reset.children).filter((el) => el.tagName === 'UL');
+      assert.equal(topUls.length, 2, '前置：两个顶层列表');
+      selectFromTo(t, topUls[0].querySelector('li'), topUls[1].querySelector('li'));
+      clickToolbar(t, 'list');
+      await settle();
+
+      const md = t.window.vditor.getValue();
+      assert.ok(!md.includes('\n\n\n'), '不应产生三连空行: ' + JSON.stringify(md));
+      assert.match(md, /^a$/m, '顶层项回段落');
+      assert.match(md, /^- a1$/m, '嵌套子列表提升为顶层');
+      assert.match(md, /^b$/m, '另一列表项回段落');
+      const emptyP = Array.from(reset.querySelectorAll('p')).filter(
+        (el) => !el.textContent.trim());
+      assert.equal(emptyP.length, 0, '不应有空段落残留');
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('H1: wysiwyg 模式 heading 参与批量转换', async () => {
+    const t = await boot('# Head\n\nbody\n', { mode: 'wysiwyg' });
+    try {
+      const reset = resetEl(t);
+      selectFromTo(t, reset.querySelector('h1'), reset.querySelector('p[data-block="0"]'));
+      clickToolbar(t, 'list');
+      await settle();
+
+      const ul = reset.querySelector('ul');
+      assert.ok(ul);
+      assert.equal(ul.querySelectorAll(':scope > li').length, 2);
+      const md = t.window.vditor.getValue();
+      assert.match(md, /^[-*] Head$/m);
+      assert.match(md, /^[-*] body$/m);
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('H2: ir 模式 heading 参与批量转换（marker 不应残留在列表项内）', async () => {
+    const t = await boot('# Head\n\nbody\n', { mode: 'ir' });
+    try {
+      const reset = resetEl(t);
+      selectFromTo(t, reset.querySelector('h1'), reset.querySelector('p[data-block="0"]'));
+      clickToolbar(t, 'list');
+      await settle();
+
+      const ul = reset.querySelector('ul');
+      assert.ok(ul, 'ir 模式 heading+段落应转换');
+      assert.equal(ul.querySelectorAll(':scope > li').length, 2, '两个块都应转换');
+      const md = t.window.vditor.getValue();
+      assert.match(md, /^[-*] Head$/m, 'heading 内容应干净进入列表项: ' + JSON.stringify(md));
+      assert.match(md, /^[-*] body$/m);
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('Q1: 单列表内选区 → 整列表切换（既有行为锁定）', async () => {
+    const t = await boot('- a\n- b\n- c\n');
+    try {
+      const reset = resetEl(t);
+      const ul = reset.querySelector('ul');
+      selectFromTo(t, ul.querySelector('li'), ul.querySelector('li:last-child'));
+      clickToolbar(t, 'ordered-list');
+      await settle();
+
+      assert.equal(reset.querySelectorAll('ul').length, 0, '整列表切换为有序');
+      const ol = reset.querySelector('ol');
+      assert.ok(ol);
+      assert.equal(ol.querySelectorAll(':scope > li').length, 3, '整列表粒度，非仅选区 li');
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('R1: 引用块隔断 → 引用保留、两段各自成列表', async () => {
+    const t = await boot('p1\n\n> quote\n\np2\n');
+    try {
+      const reset = resetEl(t);
+      // 只取编辑面直接子级的段落（blockquote 内也有 p[data-block]）
+      const topParas = Array.from(reset.children).filter((el) => el.tagName === 'P');
+      assert.equal(topParas.length, 2, '前置：p + blockquote + p');
+      selectFromTo(t, topParas[0], topParas[1]);
+      clickToolbar(t, 'list');
+      await settle();
+
+      assert.equal(reset.querySelectorAll('blockquote').length, 1, '引用块保留');
+      const uls = reset.querySelectorAll('ul');
+      assert.equal(uls.length, 2, '被引用隔开的段落各自成列表');
+    } finally {
+      t.window.close();
+    }
   });
 });

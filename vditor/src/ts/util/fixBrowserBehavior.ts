@@ -317,21 +317,26 @@ const isTargetListBlock = (block: Element, type: string) => {
  *  搬入时清掉 data-marker——异标记 li 经 spin 会拆成多个列表 */
 const listItemHTML = (block: HTMLElement, type: string): string => {
     if (BATCH_PARAGRAPH.test(block.tagName)) {
-        const inner = block.innerHTML.trimLeft();
+        const clone = block.cloneNode(true) as HTMLElement;
+        // ir 模式 heading 的内联 marker（"# "）随 innerHTML 进入 li 会破坏
+        // spin 重整，剔除后再搬运
+        clone.querySelectorAll(".vditor-ir__marker").forEach((marker) => marker.remove());
+        const inner = clone.innerHTML.trimLeft();
         return type === "check"
             ? `<li class="vditor-task"><input type="checkbox" /> ${inner}</li>`
             : `<li>${inner}</li>`;
     }
     return Array.from(block.children).filter((item) => item.tagName === "LI").map((item) => {
         const li = item.cloneNode(true) as HTMLElement;
-        const hasCheckbox = !!li.querySelector("input");
+        // 仅处理该 li 自身的 checkbox（直接子级）——嵌套子列表的项不属于本层
+        const input = li.querySelector(":scope > input");
         if (type === "check") {
-            if (!hasCheckbox) {
+            if (!input) {
                 li.insertAdjacentHTML("afterbegin", `<input type="checkbox" />`);
             }
             li.classList.add("vditor-task");
-        } else if (hasCheckbox) {
-            li.querySelector("input").remove();
+        } else if (input) {
+            input.remove();
             li.classList.remove("vditor-task");
         }
         li.removeAttribute("data-marker");
@@ -341,17 +346,25 @@ const listItemHTML = (block: HTMLElement, type: string): string => {
 
 /** 取消目标列表：每个 li 回段落（去 checkbox），列表移除 */
 const unwrapListBlock = (block: HTMLElement) => {
-    let pHTML = "";
-    Array.from(block.children).forEach((item) => {
+    let html = "";
+    Array.from(block.children).filter((item) => item.tagName === "LI").forEach((item) => {
         const li = item.cloneNode(true) as HTMLElement;
-        const input = li.querySelector("input");
+        const input = li.querySelector(":scope > input");
         if (input) {
             input.remove();
         }
         li.classList.remove("vditor-task");
-        pHTML += `<p data-block="0">${li.innerHTML.trimLeft()}</p>`;
+        // 块级子元素（嵌套列表/松散列表的 p）不能拼进 <p>：HTML 解析器按
+        // p 的内容模型会拆散它并留下空段落，提升为兄弟块
+        const nested = Array.from(li.children).filter((child) => /^(?:UL|OL|P)$/.test(child.tagName));
+        nested.forEach((child) => child.remove());
+        const inline = li.innerHTML.trimLeft();
+        if (inline) {
+            html += `<p data-block="0">${inline}</p>`;
+        }
+        html += nested.map((child) => child.outerHTML).join("");
     });
-    block.insertAdjacentHTML("beforebegin", pHTML);
+    block.insertAdjacentHTML("beforebegin", html);
     block.remove();
 };
 
@@ -393,8 +406,10 @@ const batchToggleList = (vditor: IVditor, range: Range, type: string): boolean =
         if (sources.length === 0) {
             return;
         }
+        // 带 data-marker 与既有切换路径一致（blockHandle/直播 marker 依赖该属性）
+        const marker = type === "ordered-list" ? "1." : "*";
         firstSource.insertAdjacentHTML("beforebegin",
-            `<${listTag} data-block="0">${itemsHTML}</${listTag}>`);
+            `<${listTag} data-block="0" data-marker="${marker}">${itemsHTML}</${listTag}>`);
         sources.forEach((block) => block.remove());
         itemsHTML = "";
         firstSource = null;
