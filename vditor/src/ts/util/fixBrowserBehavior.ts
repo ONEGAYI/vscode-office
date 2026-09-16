@@ -318,9 +318,11 @@ const isTargetListBlock = (block: Element, type: string) => {
 const listItemHTML = (block: HTMLElement, type: string): string => {
     if (BATCH_PARAGRAPH.test(block.tagName)) {
         const clone = block.cloneNode(true) as HTMLElement;
-        // ir 模式 heading 的内联 marker（"# "）随 innerHTML 进入 li 会破坏
-        // spin 重整，剔除后再搬运
-        clone.querySelectorAll(".vditor-ir__marker").forEach((marker) => marker.remove());
+        // ir 模式 heading 的块级 marker（"# "）随 innerHTML 进入 li 会破坏
+        // spin 重整，剔除后再搬运；行内格式 marker（strong/code 等）是语法
+        // 载体，必须保留，故仅按 heading 特征收窄剔除
+        clone.querySelectorAll(".vditor-ir__marker--heading, [data-type='heading-marker']")
+            .forEach((marker) => marker.remove());
         const inner = clone.innerHTML.trimLeft();
         return type === "check"
             ? `<li class="vditor-task"><input type="checkbox" /> ${inner}</li>`

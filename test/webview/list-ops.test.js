@@ -640,6 +640,24 @@ describe('list-ops: review hardening (N/H/Q/R)', { skip: DIST_READY ? false : 'v
     }
   });
 
+  it('H3: ir 批量转换保留行内格式语法（marker 剔除仅限 heading）', async () => {
+    const t = await boot('**bold** and `code` tail\n\npara\n', { mode: 'ir' });
+    try {
+      const reset = resetEl(t);
+      const [p1, p2] = Array.from(reset.children).filter((el) => el.tagName === 'P');
+      selectFromTo(t, p1, p2);
+      clickToolbar(t, 'list');
+      await settle();
+
+      const md = t.window.vditor.getValue();
+      assert.match(md, /\*\*bold\*\*/, '粗体语法不应丢失: ' + JSON.stringify(md));
+      assert.match(md, /`code`/, '行内代码语法不应丢失');
+      assert.match(md, /^[-*] para$/m);
+    } finally {
+      t.window.close();
+    }
+  });
+
   it('Q1: 单列表内选区 → 整列表切换（既有行为锁定）', async () => {
     const t = await boot('- a\n- b\n- c\n');
     try {
