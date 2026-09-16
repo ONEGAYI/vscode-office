@@ -11,6 +11,15 @@ import {
     normalizeDiskText,
     shouldAskAboutDiskChange,
 } from '../service/markdown/externalChangeGuard';
+import {
+    clearDeletedNotified,
+    collectPanelBufferTexts,
+    endDiskChangePrompt,
+    getSharedAcknowledgedDiskTexts,
+    registerDiskChangePanel,
+    shouldNotifyDeletedOnce,
+    tryBeginDiskChangePrompt,
+} from '../service/markdown/diskChangeCoordinator';
 import { Global, i18n } from '@/common/global';
 import { TelemetryService } from '@/service/telemetryService';
 import { openWikiLink } from '@/service/markdown/wikilink';
@@ -231,8 +240,12 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         const config = vscode.workspace.getConfiguration("vscode-office");
         registerMarkdownWebview(uri, handler);
         handler.panel.onDidDispose(() => {
+            panelDisposed = true;
             void flushDocumentSync();
             unregisterMarkdownWebview(uri);
+            // keep this panel's content out of cross-panel echo checks
+            // after its last flush has landed
+            unregisterDiskPanel();
         });
 
         // VS Code never reloads a dirty document when its file changes on
@@ -247,7 +260,20 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         // has no atomic read-modify-write): between the re-read and
         // document.save(), and between releasing a save parked by the
         // decision guard and the re-read itself.
-        const acknowledgedDiskTexts = new Set<string>();
+        // Cross-panel coordination (the same file can be open in several
+        // editor panels): the prompt slot and the acknowledged-disk-text
+        // set are per-uri global state, so "Keep my edits" in one panel
+        // silences the same disk text everywhere and only one panel ever
+        // prompts. Sibling panels' latest content also joins the buffer
+        // forms below: a flush from another panel is an echo, not an
+        // external change.
+        const uriKey = uri.toString();
+        const unregisterDiskPanel = registerDiskChangePanel(uriKey, { getContent: () => content });
+        // Guards the re-check tail below: once this panel is gone its
+        // closure state (content, the shared-set reference) is orphaned,
+        // and re-prompting from it could not be acknowledged properly.
+        let panelDisposed = false;
+        const acknowledgedDiskTexts = getSharedAcknowledgedDiskTexts(uriKey);
         // Recent pre-flush document snapshots: a save triggered while focus
         // is outside the webview writes the applied document text, which a
         // still-pending flush then advances past — the disk matching such a
@@ -263,7 +289,6 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 recentBufferTexts.shift();
             }
         };
-        let externalPromptActive = false;
         const loadDiskVersion = async (): Promise<void> => {
             let diskBytes: Uint8Array;
             try {
@@ -296,15 +321,33 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             }
         };
         const checkExternalDiskChange = async (): Promise<void> => {
-            if (externalPromptActive) return;
-            externalPromptActive = true;
+            if (panelDisposed) {
+                return;
+            }
+            if (!tryBeginDiskChangePrompt(uriKey)) {
+                // another panel of this document is already asking; its
+                // decision reaches this panel through the shared text
+                // document and the update event it produces
+                return;
+            }
             try {
                 let diskBytes: Uint8Array;
                 try {
                     diskBytes = await vscode.workspace.fs.readFile(uri);
-                } catch {
+                } catch (error) {
+                    // The watcher forwards deletes too. Nothing can be
+                    // compared against a missing file; surface it once so
+                    // the silence is at least visible, and let the next
+                    // save re-create the file (VS Code's own contract for
+                    // deleted-while-dirty documents).
+                    const isFileNotFound = (error as { code?: string } | undefined)?.code === 'FileNotFound';
+                    if (isFileNotFound && document.isDirty && shouldNotifyDeletedOnce(uriKey)) {
+                        vscode.window.showWarningMessage(
+                            i18n('ext.markdown.externalFileDeleted', parse(uri.fsPath).base));
+                    }
                     return;
                 }
+                clearDeletedNotified(uriKey);
                 const diskText = normalizeDiskText(diskBytes);
                 if (diskText === undefined) {
                     return;
@@ -313,6 +356,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                     content,
                     document.getText().replace(/\r/g, ''),
                     ...recentBufferTexts,
+                    ...collectPanelBufferTexts(uriKey),
                 ];
                 if (!shouldAskAboutDiskChange({ bufferTexts, diskText, isDirty: document.isDirty, acknowledgedDiskTexts })) {
                     return;
@@ -350,7 +394,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             } catch {
                 // the backstop must never surface its own failures
             } finally {
-                externalPromptActive = false;
+                endDiskChangePrompt(uriKey);
             }
             // the disk may have moved on while the prompt was up; re-check once
             void checkExternalDiskChange();

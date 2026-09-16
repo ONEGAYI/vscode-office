@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { SimpleEventEmitter } from "./simpleEventEmitter";
 import { WebviewPanel } from "vscode";
 import { Output } from "./Output";
+import { fileSystemPathsEqual } from "./fileSystemPathsEqual";
 
 export class Handler {
 
@@ -36,8 +37,17 @@ export class Handler {
         const eventEmitter = new SimpleEventEmitter();
 
         const fileWatcher = Handler.createFileWatcher(uri);
+        const isWatchedFile = (eventUri: vscode.Uri | undefined) =>
+            !!eventUri && fileSystemPathsEqual(eventUri.fsPath, uri.fsPath, Handler.pathCaseInsensitive());
         fileWatcher?.onDidChange(e => {
-            eventEmitter.emit("fileChange", e)
+            if (isWatchedFile(e)) {
+                eventEmitter.emit("fileChange", e)
+            }
+        })
+        fileWatcher?.onDidDelete(e => {
+            if (isWatchedFile(e)) {
+                eventEmitter.emit("fileChange", e)
+            }
         })
 
         const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument(e => {
@@ -60,18 +70,38 @@ export class Handler {
         return handle;
     }
 
+    /**
+     * Evaluated lazily: the web extension host (vscode.dev) has no
+     * `process` global, and a class field initializer runs at module
+     * load time, which would break the entire web build's activation.
+     * There the comparison stays case-sensitive — a missed refresh at
+     * worst, since web-host file events depend on the browser fs
+     * provider anyway.
+     */
+    private static pathCaseInsensitive(): boolean {
+        return typeof process !== 'undefined'
+            && (process.platform === 'win32' || process.platform === 'darwin');
+    }
+
+    /**
+     * Watches exactly this file. Virtual schemes (untitled:, ...) have no
+     * disk to diverge from and stay unwatched.
+     *
+     * The pattern must not contain the file name: VS Code's glob matcher
+     * has no escape syntax (a "\" is an escaped regexp backslash — "["
+     * still opens a character class), so a name like "report[1].md"
+     * would silently never match. Watching the literal parent folder (a
+     * Uri base carries no glob meaning) with a single-level "*" and
+     * filtering events by exact path keeps user-controlled path
+     * characters out of the pattern entirely.
+     */
     private static createFileWatcher(uri: vscode.Uri): vscode.FileSystemWatcher | undefined {
-        const folder = vscode.workspace.getWorkspaceFolder(uri);
-        if (folder) {
-            const relativePath = vscode.workspace.asRelativePath(uri, false);
-            return vscode.workspace.createFileSystemWatcher(
-                new vscode.RelativePattern(folder, relativePath)
-            );
+        if (uri.scheme !== 'file') {
+            return undefined;
         }
-        if (uri.scheme === 'file') {
-            return vscode.workspace.createFileSystemWatcher(uri.fsPath);
-        }
-        return undefined;
+        const parentFolder = vscode.Uri.joinPath(uri, '..');
+        return vscode.workspace.createFileSystemWatcher(
+            new vscode.RelativePattern(parentFolder, '*'));
     }
 
 }

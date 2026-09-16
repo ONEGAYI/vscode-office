@@ -16,6 +16,7 @@
 	"ext.markdown.noClipboardImage": "There is not an image in the clipboard.",
 	"ext.markdown.externalFileChange": "$1 has been changed on disk outside VS Code.",
 	"ext.markdown.externalSaveFailed": "Could not save $1 after loading the disk version; the document is still marked dirty and the next save will retry.",
+	"ext.markdown.externalFileDeleted": "$1 was deleted or renamed outside VS Code. Your edits are kept and will re-create the file on the next save.",
 	"ext.markdown.noPasteDirectory": "Not support paste directory.",
 	"ext.markdown.installXclip": "You need to install xclip command first.",
 	"ext.markdown.wikilinkNotFound": "Wikilink target not found: $1",

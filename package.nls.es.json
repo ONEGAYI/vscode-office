@@ -16,6 +16,7 @@
 	"ext.markdown.noClipboardImage": "No hay imagen en el portapapeles.",
 	"ext.markdown.externalFileChange": "$1 ha sido modificado fuera de VS Code.",
 	"ext.markdown.externalSaveFailed": "No se pudo guardar $1 tras cargar la versión del disco; el documento sigue marcado como modificado y el próximo guardado lo reintentará.",
+	"ext.markdown.externalFileDeleted": "$1 fue eliminado o renombrado fuera de VS Code. Tus ediciones se conservan y volverán a crear el archivo en el próximo guardado.",
 	"ext.markdown.noPasteDirectory": "No se admite pegar directorios.",
 	"ext.markdown.installXclip": "Primero debe instalar el comando xclip.",
 	"ext.markdown.wikilinkNotFound": "Destino del wikilink no encontrado: $1",
