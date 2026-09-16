@@ -295,6 +295,57 @@ export const insertBeforeBlock = (vditor: IVditor, event: KeyboardEvent, range: 
     return false;
 };
 
+// 可批量转为列表项的顶层块；列表/表格/代码块等结构块保持原样
+const BATCH_LISTABLE = /^(?:P|H[1-6])$/;
+
+/**
+ * 跨块选区批量应用列表：选区覆盖的连续可转换块（p/h1-h6）转为同一个
+ * 列表的多个 li，中间被结构块（表格/引用/代码块等）隔开的段各自成列表。
+ * 非跨块选区返回 false，交由单块路径处理。
+ */
+const batchListBlocks = (vditor: IVditor, range: Range, type: string, startBlock: HTMLElement): boolean => {
+    const endBlock = hasClosestByAttribute(range.endContainer, "data-block", "0") as HTMLElement;
+    if (!endBlock || endBlock === startBlock) {
+        return false;
+    }
+    const blocks = Array.from(vditor[vditor.currentMode].element.children);
+    const startIndex = blocks.indexOf(startBlock);
+    const endIndex = blocks.indexOf(endBlock);
+    if (startIndex === -1 || endIndex === -1) {
+        return false;
+    }
+    const selected = blocks.slice(Math.min(startIndex, endIndex), Math.max(startIndex, endIndex) + 1);
+    if (!selected.some((block) => BATCH_LISTABLE.test(block.tagName))) {
+        return false;
+    }
+
+    let group: HTMLElement[] = [];
+    const flushGroup = () => {
+        if (group.length === 0) {
+            return;
+        }
+        const listTag = type === "ordered-list" ? "ol" : "ul";
+        const itemsHTML = group.map((block) => {
+            const inner = block.innerHTML.trimLeft();
+            return type === "check"
+                ? `<li class="vditor-task"><input type="checkbox" /> ${inner}</li>`
+                : `<li>${inner}</li>`;
+        }).join("");
+        group[0].insertAdjacentHTML("beforebegin", `<${listTag} data-block="0">${itemsHTML}</${listTag}>`);
+        group.forEach((block) => block.remove());
+        group = [];
+    };
+    selected.forEach((block) => {
+        if (BATCH_LISTABLE.test(block.tagName)) {
+            group.push(block as HTMLElement);
+        } else {
+            flushGroup();
+        }
+    });
+    flushGroup();
+    return true;
+};
+
 export const listToggle = (vditor: IVditor, range: Range, type: string, cancel = true) => {
     const itemElement = hasClosestByMatchTag(range.startContainer, "LI");
     vditor[vditor.currentMode].element.querySelectorAll("wbr").forEach((wbr) => {
@@ -318,6 +369,9 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
         if (!itemElement) {
             // 添加
             let blockElement = hasClosestByAttribute(range.startContainer, "data-block", "0");
+            if (blockElement && batchListBlocks(vditor, range, type, blockElement)) {
+                return;
+            }
             if (!blockElement) {
                 vditor[vditor.currentMode].element.querySelector("wbr").remove();
                 blockElement = vditor[vditor.currentMode].element.querySelector("p");

@@ -163,6 +163,9 @@ export class Options {
         }, {
             name: "|",
         }, {
+            // 无序列表快捷键取 indent 原默认的 ⇧⌘O（本应用工具栏不含
+            // indent，两键同绑会按 toolbar 顺序先到先得产生二义）
+            hotkey: "⇧⌘O",
             icon: getToolbarCodicon("list"),
             name: "list",
             prefix: "* ",
@@ -181,7 +184,6 @@ export class Options {
             icon: getToolbarCodicon("outdent"),
             name: "outdent",
         }, {
-            hotkey: "⇧⌘O",
             icon: getToolbarCodicon("indent"),
             name: "indent",
         }, {
