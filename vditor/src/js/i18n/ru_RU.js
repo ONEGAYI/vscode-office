@@ -138,6 +138,7 @@ window.VditorI18n = {
   'imageMaxHeight': 'Макс. высота',
     'pageWidth': 'Ширина страницы',
     'typewriterMode': 'Режим пишущей машинки',
+    'blockLineNumbers': 'Номера строк блоков',
   'boldColor': 'Цвет жирного',
   'boldColorDefault': 'По умолчанию',
   'boldColorPlain': 'Основной текст',

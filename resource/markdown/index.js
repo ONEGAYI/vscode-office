@@ -31,6 +31,7 @@ handler.on("open", async (md) => {
     editorTheme,
     codeMirrorTheme,
     mermaidTheme,
+    blockLineNumbers: markdownBlockLineNumbers !== false,
     lang: mapVscodeLanguageToVditorLang(language),
     tab: '\t',
     toolbar: await getToolbar(rootPath, () => {
@@ -79,6 +80,10 @@ handler.on("open", async (md) => {
     },
     changeEditMode(mode) {
       handler.emit('editMode', mode)
+    },
+    onChangeBlockLineNumbers(enabled) {
+      // 面板开关回传扩展侧写配置；配置变更广播回来经 markdownConfig 生效
+      handler.emit('blockLineNumbers', enabled)
     },
     onSettingsChange(settings) {
       handler.emit('syncViewerSettings', settings)

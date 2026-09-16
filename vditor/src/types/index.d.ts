@@ -604,6 +604,11 @@ interface IOptions {
     /** 编辑模式修改后触发 */
     changeEditMode?(value: string): void;
 
+    /** 段落行号开关（编辑器内 Settings 面板切换时触发；初值经 options 下发） */
+    blockLineNumbers?: boolean;
+    /** 行号开关切换后触发（宿主负责持久化并回推生效，编辑器不落 localStorage） */
+    onChangeBlockLineNumbers?(enabled: boolean): void;
+
     /** 聚焦后触发  */
     focus?(value: string): void;
 

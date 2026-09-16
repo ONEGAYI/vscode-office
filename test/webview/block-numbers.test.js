@@ -43,6 +43,10 @@ const PKG_PATH = path.join(ROOT, 'package.json');
 const IR_LESS_PATH = path.join(ROOT, 'vditor', 'src', 'assets', 'less', '_ir.less');
 const WYSIWYG_LESS_PATH = path.join(ROOT, 'vditor', 'src', 'assets', 'less', '_wysiwyg.less');
 const PROVIDER_PATH = path.join(ROOT, 'src', 'provider', 'markdownEditorProvider.ts');
+const SETTINGS_PANEL_PATH = path.join(ROOT, 'vditor', 'src', 'ts', 'ui', 'settingsPanel.ts');
+const SETTINGS_TOOLBAR_PATH = path.join(ROOT, 'vditor', 'src', 'ts', 'toolbar', 'Settings.ts');
+const VDITOR_TYPES_PATH = path.join(ROOT, 'vditor', 'src', 'types', 'index.d.ts');
+const I18N_DIR = path.join(ROOT, 'vditor', 'src', 'js', 'i18n');
 
 const MODULE_READY = fs.existsSync(MODULE_PATH);
 const DIST_READY = fs.existsSync(path.join(DIST, 'index.min.js'))
@@ -490,5 +494,57 @@ describe('block-numbers: wiring contract (W)', () => {
     assert.ok(block, 'MARKDOWN_SYNC_CONFIG_KEYS array not found');
     assert.match(block[0], /markdownBlockLineNumbers/);
     assert.match(block[0], /markdownHeadingBadges/);
+  });
+
+  it('W5: panel toggle round-trips through the VS Code setting (editMode-style)', () => {
+    // 单一数据源：面板开关不落 localStorage，经回调 → 扩展侧写配置 →
+    // onDidChangeConfiguration 广播 → 各面板 markdownConfig 生效
+    const js = fs.readFileSync(INDEXJS_PATH, 'utf8');
+    assert.match(js, /blockLineNumbers:\s*markdownBlockLineNumbers\s*!==\s*false/);
+    assert.match(js, /onChangeBlockLineNumbers/);
+    assert.match(js, /emit\('blockLineNumbers'/);
+    const provider = fs.readFileSync(PROVIDER_PATH, 'utf8');
+    assert.match(provider, /on\(['"]blockLineNumbers['"]/);
+    assert.match(provider, /updateConfig\(['"]markdownBlockLineNumbers['"]/);
+  });
+});
+
+// ── P：编辑器内设置面板开关（vditor Settings modal） ────────────────────
+
+describe('block-numbers: in-editor settings panel (P)', () => {
+  it('P1: panel renders a Block Line Numbers toggle initialized from options', () => {
+    const src = fs.readFileSync(SETTINGS_PANEL_PATH, 'utf8');
+    // 初值来自 Vditor options（VS Code 配置透传），不是 localStorage
+    assert.match(src, /blockLineNumbers/);
+    assert.match(src, /buildToggleHTML\(BLOCK_LINE_NUMBERS_KEY,\s*i18n\.blockLineNumbers\s*\?\?\s*"Block Line Numbers"/);
+    assert.match(src, /options\.blockLineNumbers\s*!==\s*false/);
+  });
+
+  it('P2: toolbar Settings routes the toggle to the onChange callback, bypassing localStorage', () => {
+    const src = fs.readFileSync(SETTINGS_TOOLBAR_PATH, 'utf8');
+    // 行号 key 在通用 localStorage 写入之前拦截（不进 vditor-global-settings）
+    assert.match(src, /BLOCK_LINE_NUMBERS_KEY/);
+    assert.match(src, /onChangeBlockLineNumbers\?\.\(next\)/);
+    const toggleBlock = src.match(/\/\/ Toggle switch[\s\S]*?\/\/ Dropdown trigger/);
+    assert.ok(toggleBlock, 'toggle branch not found');
+    const intercept = toggleBlock[0].indexOf('BLOCK_LINE_NUMBERS_KEY');
+    const genericWrite = toggleBlock[0].indexOf('setGlobalLocalStorageSetting(key');
+    assert.ok(intercept >= 0, 'block line numbers intercept missing in toggle branch');
+    assert.ok(genericWrite > intercept, 'intercept must precede the generic localStorage write');
+  });
+
+  it('P3: IOptions declares the value and the change callback', () => {
+    const src = fs.readFileSync(VDITOR_TYPES_PATH, 'utf8');
+    assert.match(src, /blockLineNumbers\?:\s*boolean/);
+    assert.match(src, /onChangeBlockLineNumbers\?\(enabled:\s*boolean\):\s*void/);
+  });
+
+  it('P4: i18n ships the blockLineNumbers label in every locale', () => {
+    const locales = fs.readdirSync(I18N_DIR).filter((f) => f.endsWith('.js'));
+    assert.ok(locales.length >= 6, `unexpected locale count: ${locales.length}`);
+    for (const f of locales) {
+      const src = fs.readFileSync(path.join(I18N_DIR, f), 'utf8');
+      assert.match(src, /'blockLineNumbers':\s*'[^']*'/, `${f} missing blockLineNumbers`);
+    }
   });
 });

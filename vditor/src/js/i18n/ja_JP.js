@@ -138,6 +138,7 @@ window.VditorI18n = {
   'imageMaxHeight': '最大高さ',
     'pageWidth': 'ページ幅',
     'typewriterMode': 'タイプライターモード',
+    'blockLineNumbers': 'ブロック行番号',
   'boldColor': '太字の色',
   'boldColorDefault': 'デフォルト',
   'boldColorPlain': '本文色',

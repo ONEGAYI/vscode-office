@@ -482,6 +482,11 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             if (mode === "wysiwyg" || mode === "ir") {
                 Global.updateConfig("editMode", mode);
             }
+        }).on("blockLineNumbers", (enabled: unknown) => {
+            if (typeof enabled === "boolean") {
+                // 写配置后经 MARKDOWN_SYNC_CONFIG_KEYS 广播，所有面板即时生效
+                Global.updateConfig("markdownBlockLineNumbers", enabled);
+            }
         }).on("img", async (payload) => {
             const imgData: string = typeof payload === 'string' ? payload : payload.data;
             const ext: string = typeof payload === 'string' ? 'png' : (payload.ext || 'png');
