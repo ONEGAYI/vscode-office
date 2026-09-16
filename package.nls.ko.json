@@ -14,6 +14,7 @@
 	"ext.markdown.exportSuccess": "Markdown을 $1(으)로 보내기 성공!",
 	"ext.markdown.noChromium": "Chromium을 찾을 수 없어 보내기에 실패했습니다.",
 	"ext.markdown.noClipboardImage": "클립보드에 이미지가 없습니다.",
+	"ext.markdown.linkSchemeBlocked": "지원되지 않는 스킴의 링크를 차단했습니다: $1",
 	"ext.markdown.noPasteDirectory": "디렉터리 붙여넣기는 지원되지 않습니다.",
 	"ext.markdown.installXclip": "먼저 xclip 명령을 설치해야 합니다.",
 	"ext.markdown.wikilinkNotFound": "위키링크 대상을 찾을 수 없습니다: $1",

@@ -14,6 +14,7 @@
 	"ext.markdown.exportSuccess": "Markdown erfolgreich nach $1 exportiert!",
 	"ext.markdown.noChromium": "Chromium nicht gefunden, Export fehlgeschlagen.",
 	"ext.markdown.noClipboardImage": "Kein Bild in der Zwischenablage.",
+	"ext.markdown.linkSchemeBlocked": "Link mit nicht unterstütztem Schema blockiert: $1",
 	"ext.markdown.noPasteDirectory": "Einfügen von Verzeichnissen wird nicht unterstützt.",
 	"ext.markdown.installXclip": "Sie müssen zuerst den Befehl xclip installieren.",
 	"ext.markdown.wikilinkNotFound": "Wikilink-Ziel nicht gefunden: $1",

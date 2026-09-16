@@ -7,6 +7,12 @@ import { Handler } from '../common/handler';
 import { Util } from '../common/util';
 import { Holder } from '../service/markdown/holder';
 import { MarkdownService } from '../service/markdownService';
+import {
+    extractUriScheme,
+    isOpenExternalLinkAllowed,
+    isWebviewCommandAllowed,
+    sanitizeImageExtension,
+} from '../service/markdown/webviewInputValidation';
 import { Global, i18n } from '@/common/global';
 import { TelemetryService } from '@/service/telemetryService';
 import { openWikiLink } from '@/service/markdown/wikilink';
@@ -225,7 +231,9 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             this.updateCount(content)
             handler.emit("update", updatedText)
         }).on("command", (command) => {
-            vscode.commands.executeCommand(command)
+            if (isWebviewCommandAllowed(command)) {
+                vscode.commands.executeCommand(command)
+            }
         }).on("openLink", async (linkUri: string) => {
             if (linkUri.startsWith('wiki:')) {
                 await openWikiLink(uri, linkUri);
@@ -235,7 +243,13 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             if (localUri) {
                 vscode.commands.executeCommand('vscode.open', localUri, { preview: false });
             } else {
-                vscode.env.openExternal(vscode.Uri.parse(linkUri));
+                const trimmed = linkUri.trim();
+                if (isOpenExternalLinkAllowed(trimmed)) {
+                    vscode.env.openExternal(vscode.Uri.parse(trimmed));
+                } else {
+                    vscode.window.showWarningMessage(
+                        i18n('ext.markdown.linkSchemeBlocked', extractUriScheme(trimmed) ?? ''));
+                }
             }
         }).on("codeMirrorTheme", (theme: string) => {
             const validThemes = [
@@ -316,8 +330,9 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 ['cweijan.vscode-database-client2'],
             );
         }).on('openExternal', (url: string) => {
-            if (url) {
-                vscode.env.openExternal(vscode.Uri.parse(url));
+            const trimmed = typeof url === 'string' ? url.trim() : '';
+            if (trimmed && isOpenExternalLinkAllowed(trimmed)) {
+                vscode.env.openExternal(vscode.Uri.parse(trimmed));
             }
         }).on('queryAIAvailable', () => {
             void this.notifyAIAvailable(handler);
@@ -498,7 +513,8 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         imageData: string | Uint8Array,
         ext: string,
     ): Promise<string | undefined> {
-        const { relPath, fullPath } = adjustImgPath(documentUri, ext);
+        const safeExt = sanitizeImageExtension(ext) ?? 'png';
+        const { relPath, fullPath } = adjustImgPath(documentUri, safeExt);
         const imagePath = isAbsolute(fullPath) ? fullPath : `${resolve(documentUri.fsPath, "..")}/${relPath}`.replace(/\\/g, "/");
         const imageUri = vscode.Uri.file(imagePath);
         await ensureParentDirectory(imageUri);
