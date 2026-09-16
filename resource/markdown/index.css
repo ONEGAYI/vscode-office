@@ -291,3 +291,111 @@ body.is-web .vditor-context-menu__item--desktop-only:focus-visible {
 .vditor-wysiwyg [data-block] > li[data-marker]:not(.vditor-task)::before {
     color: var(--list-marker-color, var(--vscode-descriptionForeground, rgba(127, 127, 127, 0.6)));
 }
+
+/* ── Block line numbers (see block-numbers.js) ──────────────────────────
+   Every independent block (h1-h6, p, ul/ol, blockquote, table, code
+   block …) shows the 1-based line its first source line occupies in the
+   editor's current text (live getValue()). The number rides on the block
+   via ::after/attr(), so it scrolls with the document — no fixed gutter.
+
+   Why ::after and not ::before: the engine's H1..H6 badge and the
+   block-type badges ("A", "^F", ToC) own the :before pseudo-element of
+   their blocks, and a table's ::before gets swallowed by the table
+   layout; ::after is free on all top-level blocks (the engine only uses
+   hN:empty::after as the empty-heading placeholder, an editing
+   transient).
+
+   Column layout (block content edge = 0):
+     [ -66 .. -58 )  breathing room
+     [ -58 .. -32 ]  line number, right-aligned (26px)
+     [ -29 .. -4  ]  Hx badge column (vditor's -29px block markers)
+   .vmd-block-linenumbers (set by block-numbers.js) reserves the padding;
+   .vmd-linenumbers-off suppresses the rendered numbers (belt and
+   suspenders — the module also removes the attributes when disabled). */
+.vditor [data-lineno] {
+    position: relative;
+}
+
+.vditor [data-lineno]::after {
+    content: attr(data-lineno);
+    position: absolute;
+    left: -58px;
+    top: 0.25em;
+    width: 26px;
+    text-align: right;
+    font-size: 11px;
+    font-family: var(--font-code, 'Cascadia Code', Consolas, 'Courier New', monospace);
+    color: var(--vscode-descriptionForeground, rgba(127, 127, 127, 0.55));
+    line-height: 1.6;
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Tables: a table element's own pseudo-elements are swallowed by the
+   anonymous-table-box fixup (computed styles look right, nothing
+   renders), so the number anchors on the first header cell instead.
+   The value travels via the inherited --lineno custom property set by
+   block-numbers.js (attr() cannot cross elements); removing the
+   property (disabled) makes var() invalid and the number disappears.
+   The engine scrolls wide tables via overflow:auto on the table itself,
+   which would clip the number box outside the table's padding box —
+   with line numbers on, wide tables scroll horizontally on the editing
+   surface instead (pre.vditor-reset is overflow:auto too). */
+.vditor table[data-lineno] {
+    overflow: visible;
+}
+
+.vditor table[data-lineno]::after {
+    content: none;
+}
+
+.vditor table[data-lineno] th:first-child {
+    position: relative;
+}
+
+.vditor table[data-lineno] th:first-child::after {
+    content: var(--lineno);
+    position: absolute;
+    /* th border shifts the anchor ~0.7px right vs. sibling blocks — negligible */
+    left: -58px;
+    top: 0.25em;
+    width: 26px;
+    text-align: right;
+    font-size: 11px;
+    font-family: var(--font-code, 'Cascadia Code', Consolas, 'Courier New', monospace);
+    color: var(--vscode-descriptionForeground, rgba(127, 127, 127, 0.55));
+    line-height: 1.6;
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Blockquotes: the left border (~4.7px) shifts the padding-box anchor
+   right; compensate so the column stays aligned with sibling blocks. */
+.vditor blockquote[data-lineno]::after {
+    left: -63px;
+}
+
+body.vmd-block-linenumbers .vditor-ir .vditor-reset,
+body.vmd-block-linenumbers .vditor-wysiwyg .vditor-reset {
+    padding-left: 66px;
+}
+
+body.vmd-linenumbers-off .vditor [data-lineno]::after {
+    content: none;
+}
+
+/* ── Heading badges opt-out (markdownHeadingBadges=false) ───────────────
+   The engine (vditor less) renders H1..H6 badges on every heading by
+   default; this restores the previous focus-only behavior by suppressing
+   non-active badges. The active variant (caret's heading) stays as the
+   engine styles it. */
+body.vmd-heading-badges-off .vditor-reset > h1:not(.vditor-heading--active)::before,
+body.vmd-heading-badges-off .vditor-reset > h2:not(.vditor-heading--active)::before,
+body.vmd-heading-badges-off .vditor-reset > h3:not(.vditor-heading--active)::before,
+body.vmd-heading-badges-off .vditor-reset > h4:not(.vditor-heading--active)::before,
+body.vmd-heading-badges-off .vditor-reset > h5:not(.vditor-heading--active)::before,
+body.vmd-heading-badges-off .vditor-reset > h6:not(.vditor-heading--active)::before {
+    content: none;
+}

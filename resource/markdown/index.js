@@ -7,7 +7,8 @@ handler.on("open", async (md) => {
   window.__officeMarkdownFileName = fileName || 'Note';
   const {
     language, isWeb, isDev, markdown,
-    editMode, editorTheme, codeMirrorTheme, mermaidTheme
+    editMode, editorTheme, codeMirrorTheme, mermaidTheme,
+    markdownBlockLineNumbers, markdownHeadingBadges,
   } = config;
   if (isWeb) {
     document.body.classList.add('is-web')
@@ -120,6 +121,8 @@ handler.on("open", async (md) => {
     after() {
       const { viewerSettings } = md;
       ListMarkerLive.install(editor);
+      document.body.classList.toggle('vmd-heading-badges-off', markdownHeadingBadges === false);
+      BlockLineNumbers.install(editor, { enabled: markdownBlockLineNumbers !== false });
       observeWorkspaceAbsoluteImages(document.getElementById('vditor'), workspaceBaseUrl);
       if (viewerSettings?.enabled) {
         editor.setViewerSettingsSyncEnabled(true);
@@ -145,6 +148,12 @@ handler.on("open", async (md) => {
         }
         if (update.editMode !== undefined) {
           editor.switchEditMode(update.editMode);
+        }
+        if (update.markdownBlockLineNumbers !== undefined) {
+          BlockLineNumbers.setEnabled(update.markdownBlockLineNumbers !== false);
+        }
+        if (update.markdownHeadingBadges !== undefined) {
+          document.body.classList.toggle('vmd-heading-badges-off', update.markdownHeadingBadges === false);
         }
       });
       handler.on("update", content => {
