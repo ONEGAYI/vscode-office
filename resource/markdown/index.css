@@ -380,6 +380,25 @@ body.is-web .vditor-context-menu__item--desktop-only:focus-visible {
 body.vmd-block-linenumbers .vditor-ir .vditor-reset,
 body.vmd-block-linenumbers .vditor-wysiwyg .vditor-reset {
     padding-left: 66px;
+    position: relative;
+}
+
+/* Faint vertical rule between the line-number column and the badge
+   column ([-32..-29px] gutter, drawn at -31px = padding-box +35px).
+   Neutral gray at 50% alpha composites to roughly half the visual
+   weight of the blockquote bar on dark themes (#40 on black) and stays
+   a light guide on white; anchored on the reset's own ::before, which
+   the engine leaves free, and spans the full scroll height (the reset
+   is the scroll container). */
+body.vmd-block-linenumbers .vditor-reset::before {
+    content: '';
+    position: absolute;
+    left: 35px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(128, 128, 128, 0.5);
+    pointer-events: none;
 }
 
 body.vmd-linenumbers-off .vditor [data-lineno]::after {

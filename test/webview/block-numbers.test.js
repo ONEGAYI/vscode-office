@@ -418,6 +418,14 @@ describe('block-numbers: CSS contract (C)', () => {
   it('C6: blockquote number compensates the left-border anchor shift', () => {
     assert.match(css, /blockquote\[data-lineno\]::?after[^{]*\{[^}]*left:\s*-6[0-9]px/);
   });
+
+  it('C7: faint vertical rule separates the number column from badges', () => {
+    // 竖线挂在 reset 自身 ::before（引擎未占用），门控随行号开启；
+    // 中性灰 50% 透明（暗底约合引用线一半亮度，亮底为浅引导线）
+    assert.match(css, /vmd-block-linenumbers[^{]*vditor-reset::?before[^{]*\{[^}]*content:\s*''/);
+    assert.match(css, /vmd-block-linenumbers[^{]*vditor-reset::?before[^{]*\{[^}]*width:\s*1px/);
+    assert.match(css, /vmd-block-linenumbers[^{]*vditor-reset::?before[\s\S]{0,300}?background:\s*rgba\(128,\s*128,\s*128,\s*0\.5\)/);
+  });
 });
 
 // ── H：Hx 徽标常驻 CSS 契约 ─────────────────────────────────────────────
