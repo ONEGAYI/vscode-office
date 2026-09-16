@@ -295,17 +295,76 @@ export const insertBeforeBlock = (vditor: IVditor, event: KeyboardEvent, range: 
     return false;
 };
 
-// 可批量转为列表项的顶层块；列表/表格/代码块等结构块保持原样
-const BATCH_LISTABLE = /^(?:P|H[1-6])$/;
+// 可批量列表化的顶层块：段落/标题直接转列表项，已有列表整体参与切换/取消；
+// 表格/引用/代码块等结构块保持原样，并把相邻转换段隔断成独立列表
+const BATCH_PARAGRAPH = /^(?:P|H[1-6])$/;
+const BATCH_LIST = /^(?:UL|OL)$/;
+
+const listTagOfType = (type: string) => (type === "ordered-list" ? "ol" : "ul");
+
+/** 顶层列表块是否已是目标类型：任务列表要求全部 li 已带 checkbox，
+ *  普通无序列表要求全部 li 不带（混合态视为待切换） */
+const isTargetListBlock = (block: Element, type: string) => {
+    if (block.tagName !== listTagOfType(type).toUpperCase()) {
+        return false;
+    }
+    const lis = Array.from(block.children).filter((item) => item.tagName === "LI");
+    return lis.length > 0 && lis.every((li) =>
+        type === "check" ? li.classList.contains("vditor-task") : !li.classList.contains("vditor-task"));
+};
+
+/** 块转为目标类型的 li HTML：段落/标题构造新 li，已有列表的 li 整体搬入。
+ *  搬入时清掉 data-marker——异标记 li 经 spin 会拆成多个列表 */
+const listItemHTML = (block: HTMLElement, type: string): string => {
+    if (BATCH_PARAGRAPH.test(block.tagName)) {
+        const inner = block.innerHTML.trimLeft();
+        return type === "check"
+            ? `<li class="vditor-task"><input type="checkbox" /> ${inner}</li>`
+            : `<li>${inner}</li>`;
+    }
+    return Array.from(block.children).filter((item) => item.tagName === "LI").map((item) => {
+        const li = item.cloneNode(true) as HTMLElement;
+        const hasCheckbox = !!li.querySelector("input");
+        if (type === "check") {
+            if (!hasCheckbox) {
+                li.insertAdjacentHTML("afterbegin", `<input type="checkbox" />`);
+            }
+            li.classList.add("vditor-task");
+        } else if (hasCheckbox) {
+            li.querySelector("input").remove();
+            li.classList.remove("vditor-task");
+        }
+        li.removeAttribute("data-marker");
+        return li.outerHTML;
+    }).join("");
+};
+
+/** 取消目标列表：每个 li 回段落（去 checkbox），列表移除 */
+const unwrapListBlock = (block: HTMLElement) => {
+    let pHTML = "";
+    Array.from(block.children).forEach((item) => {
+        const li = item.cloneNode(true) as HTMLElement;
+        const input = li.querySelector("input");
+        if (input) {
+            input.remove();
+        }
+        li.classList.remove("vditor-task");
+        pHTML += `<p data-block="0">${li.innerHTML.trimLeft()}</p>`;
+    });
+    block.insertAdjacentHTML("beforebegin", pHTML);
+    block.remove();
+};
 
 /**
- * 跨块选区批量应用列表：选区覆盖的连续可转换块（p/h1-h6）转为同一个
- * 列表的多个 li，中间被结构块（表格/引用/代码块等）隔开的段各自成列表。
- * 非跨块选区返回 false，交由单块路径处理。
+ * 跨块选区批量切换列表（toggle）：选区整体已是目标列表 → 全部取消回
+ * 段落；否则全部转为目标列表（段落变 li、异类型列表的 li 吸并，相邻
+ * 连续段合成同一列表，结构块隔断处各自成列表）。
+ * 非跨块选区返回 false，交由单块/整列表路径处理。
  */
-const batchListBlocks = (vditor: IVditor, range: Range, type: string, startBlock: HTMLElement): boolean => {
+const batchToggleList = (vditor: IVditor, range: Range, type: string): boolean => {
+    const startBlock = hasClosestByAttribute(range.startContainer, "data-block", "0") as HTMLElement;
     const endBlock = hasClosestByAttribute(range.endContainer, "data-block", "0") as HTMLElement;
-    if (!endBlock || endBlock === startBlock) {
+    if (!startBlock || !endBlock || startBlock === endBlock) {
         return false;
     }
     const blocks = Array.from(vditor[vditor.currentMode].element.children);
@@ -315,29 +374,40 @@ const batchListBlocks = (vditor: IVditor, range: Range, type: string, startBlock
         return false;
     }
     const selected = blocks.slice(Math.min(startIndex, endIndex), Math.max(startIndex, endIndex) + 1);
-    if (!selected.some((block) => BATCH_LISTABLE.test(block.tagName))) {
+    const convertible = selected.filter((block) =>
+        BATCH_PARAGRAPH.test(block.tagName) || BATCH_LIST.test(block.tagName));
+    if (convertible.length === 0) {
         return false;
     }
 
-    let group: HTMLElement[] = [];
+    if (convertible.every((block) => BATCH_LIST.test(block.tagName) && isTargetListBlock(block, type))) {
+        convertible.forEach((block) => unwrapListBlock(block as HTMLElement));
+        return true;
+    }
+
+    const listTag = listTagOfType(type);
+    let itemsHTML = "";
+    let firstSource: HTMLElement = null;
+    let sources: HTMLElement[] = [];
     const flushGroup = () => {
-        if (group.length === 0) {
+        if (sources.length === 0) {
             return;
         }
-        const listTag = type === "ordered-list" ? "ol" : "ul";
-        const itemsHTML = group.map((block) => {
-            const inner = block.innerHTML.trimLeft();
-            return type === "check"
-                ? `<li class="vditor-task"><input type="checkbox" /> ${inner}</li>`
-                : `<li>${inner}</li>`;
-        }).join("");
-        group[0].insertAdjacentHTML("beforebegin", `<${listTag} data-block="0">${itemsHTML}</${listTag}>`);
-        group.forEach((block) => block.remove());
-        group = [];
+        firstSource.insertAdjacentHTML("beforebegin",
+            `<${listTag} data-block="0">${itemsHTML}</${listTag}>`);
+        sources.forEach((block) => block.remove());
+        itemsHTML = "";
+        firstSource = null;
+        sources = [];
     };
     selected.forEach((block) => {
-        if (BATCH_LISTABLE.test(block.tagName)) {
-            group.push(block as HTMLElement);
+        const element = block as HTMLElement;
+        if (BATCH_PARAGRAPH.test(block.tagName) || BATCH_LIST.test(block.tagName)) {
+            if (sources.length === 0) {
+                firstSource = element;
+            }
+            itemsHTML += listItemHTML(element, type);
+            sources.push(element);
         } else {
             flushGroup();
         }
@@ -352,6 +422,10 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
         wbr.remove();
     });
     range.insertNode(document.createElement("wbr"));
+
+    if (batchToggleList(vditor, range, type)) {
+        return;
+    }
 
     if (cancel && itemElement) {
         // 取消
@@ -369,9 +443,6 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
         if (!itemElement) {
             // 添加
             let blockElement = hasClosestByAttribute(range.startContainer, "data-block", "0");
-            if (blockElement && batchListBlocks(vditor, range, type, blockElement)) {
-                return;
-            }
             if (!blockElement) {
                 vditor[vditor.currentMode].element.querySelector("wbr").remove();
                 blockElement = vditor[vditor.currentMode].element.querySelector("p");

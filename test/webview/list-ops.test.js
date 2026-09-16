@@ -14,9 +14,10 @@
  *   分发器对 MenuItem 的触发方式一致），驱动 toolbarEvent/processToolbar
  *
  * 语义契约：
- * - 跨块批量：选区覆盖的连续可转换块（p/h1-h6）转为同一个列表的多个
- *   li；列表/表格/引用等非可转换块原样保留，把可转换段隔开时各段独立成列表
- * - 单块选中维持既有行为（回归保护）
+ * - 跨块批量切换（toggle）：选区整体已是目标列表 → 全部取消回段落；
+ *   否则（无列表/异类型列表/混合）→ 全部转为目标列表，已有列表的 li
+ *   吸并进相邻连续段合成同一列表；表格/引用等结构块原样保留并隔断分组
+ * - 单块/单列表选中维持既有行为（回归保护）
  *
  * 前置：需先构建 vditor 子包（vditor/dist 不入库）。未构建时整组跳过。
  */
@@ -136,16 +137,20 @@ const resetEl = (ctx) => ctx.document.querySelector(`.vditor-${ctx.mode} .vditor
 const paras = (ctx) => Array.from(resetEl(ctx).querySelectorAll('p[data-block="0"]'));
 
 /** 跨块选区：从 start 块文本开头选到 end 块文本末尾，并通知 selectionchange */
-function selectBlocks(ctx, startBlock, endBlock) {
+function selectFromTo(ctx, startEl, endEl) {
   const { window, document } = ctx;
+  const startNode = startEl.firstChild || startEl;
+  const endNode = endEl.firstChild || endEl;
   const sel = window.getSelection();
   const range = document.createRange();
-  range.setStart(startBlock.firstChild, 0);
-  range.setEnd(endBlock.firstChild, endBlock.firstChild.textContent.length);
+  range.setStart(startNode, 0);
+  range.setEnd(endNode, endNode.textContent.length);
   sel.removeAllRanges();
   sel.addRange(range);
   document.dispatchEvent(new window.Event('selectionchange'));
 }
+
+const selectBlocks = (ctx, startBlock, endBlock) => selectFromTo(ctx, startBlock, endBlock);
 
 /** 与 hotkeyEvent 分发器同款：向 MenuItem 内部按钮派发 click CustomEvent */
 function clickToolbar(ctx, name) {
@@ -361,6 +366,150 @@ describe('list-ops: batch list over multi-block selection (B, wysiwyg)', { skip:
       assert.match(md, /^second para$/m);
     } finally {
       undoCtx.window.close();
+    }
+  });
+});
+
+// ── T：批量切换语义（toggle） ────────────────────────────────────────────
+// 选区整体已是目标列表 → 全部取消回段落；否则（无列表/异类型/混合）→
+// 全部转为目标列表，已有列表的 li 吸并进来（相邻连续段合成同一列表）
+
+describe('list-ops: batch toggle semantics (T)', { skip: DIST_READY ? false : 'vditor/dist 未构建：先在 vditor/ 目录执行构建' }, () => {
+  it('T1: 两个目标列表跨选 → 全部取消回段落', async () => {
+    const t = await boot('- a\n- b\n\n* c\n* d\n');
+    try {
+      const reset = resetEl(t);
+      const [ul1, ul2] = reset.querySelectorAll('ul');
+      assert.equal(reset.querySelectorAll('ul').length, 2, '前置：异 marker 构成两个列表');
+      selectFromTo(t, ul1.querySelector('li'), ul2.querySelector('li:last-child'));
+      clickToolbar(t, 'list');
+      await settle();
+
+      assert.equal(reset.querySelectorAll('ul').length, 0, '两个列表都应取消');
+      assert.equal(reset.querySelectorAll('p[data-block="0"]').length, 4, '每个 li 各回一个段落');
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('T2: 有序列表 + 段落跨选 → 切换为无序列表（ol 的 li 吸并）', async () => {
+    const t = await boot('1. one\n2. two\n\npara\n');
+    try {
+      const reset = resetEl(t);
+      const ol = reset.querySelector('ol');
+      const p = reset.querySelector('p[data-block="0"]');
+      selectFromTo(t, ol.querySelector('li'), p);
+      clickToolbar(t, 'list');
+      await settle();
+
+      assert.equal(reset.querySelectorAll('ol').length, 0, '有序列表应消失');
+      const ul = reset.querySelector('ul');
+      assert.ok(ul, '应生成无序列表');
+      const texts = Array.from(ul.querySelectorAll(':scope > li')).map((li) => li.textContent);
+      assert.deepEqual(texts.map((s) => s.replace(/\s+/g, ' ').trim()), ['one', 'two', 'para']);
+      const md = t.window.vditor.getValue();
+      assert.match(md, /^[-*] one$/m);
+      assert.match(md, /^[-*] para$/m);
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('T3: 段落+目标列表+段落 → 吸并为同一个列表', async () => {
+    const t = await boot('first\n\n- mid\n\nlast\n');
+    try {
+      const reset = resetEl(t);
+      const [p1, ul, p2] = [reset.querySelector('p[data-block="0"]'), reset.querySelector('ul'),
+        reset.querySelectorAll('p[data-block="0"]')[1]];
+      selectFromTo(t, p1, p2);
+      clickToolbar(t, 'list');
+      await settle();
+
+      assert.equal(reset.querySelectorAll('ul').length, 1, '全部并入同一个列表');
+      assert.equal(reset.querySelectorAll('ul > li').length, 3);
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('T4: 两个目标列表夹表格跨选 → 取消列表且表格保留', async () => {
+    const t = await boot('- a\n- b\n\n| x | y |\n| --- | --- |\n| 1 | 2 |\n\n- c\n- d\n');
+    try {
+      const reset = resetEl(t);
+      const [ul1, ul2] = reset.querySelectorAll('ul');
+      selectFromTo(t, ul1.querySelector('li'), ul2.querySelector('li:last-child'));
+      clickToolbar(t, 'list');
+      await settle();
+
+      assert.equal(reset.querySelectorAll('ul').length, 0, '两个列表都应取消');
+      assert.equal(reset.querySelectorAll('table').length, 1, '表格保留');
+      assert.equal(reset.querySelectorAll('p[data-block="0"]').length, 4);
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('T5: 任务列表 + 段落跨选 → 切换为普通无序列表（去掉 checkbox）', async () => {
+    const t = await boot('- [ ] one\n- [x] two\n\npara\n');
+    try {
+      const reset = resetEl(t);
+      const ul = reset.querySelector('ul');
+      const p = reset.querySelector('p[data-block="0"]');
+      selectFromTo(t, ul.querySelector('li'), p);
+      clickToolbar(t, 'list');
+      await settle();
+
+      const newUl = reset.querySelector('ul');
+      assert.ok(newUl);
+      assert.equal(newUl.querySelectorAll('input').length, 0, 'checkbox 应全部移除');
+      assert.equal(newUl.querySelectorAll(':scope > li').length, 3);
+      const md = t.window.vditor.getValue();
+      assert.ok(!md.includes('['), '任务标记不应残留在源码: ' + JSON.stringify(md));
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('T6: 段落 + 任务列表跨选 → 切换为任务列表（段落补 checkbox）', async () => {
+    const t = await boot('todo\n\n- [x] done\n');
+    try {
+      const reset = resetEl(t);
+      const p = reset.querySelector('p[data-block="0"]');
+      const ul = reset.querySelector('ul');
+      selectFromTo(t, p, ul.querySelector('li'));
+      clickToolbar(t, 'check');
+      await settle();
+
+      const newUl = reset.querySelector('ul');
+      assert.ok(newUl);
+      const lis = newUl.querySelectorAll(':scope > li');
+      assert.equal(lis.length, 2);
+      lis.forEach((li) => {
+        assert.ok(li.querySelector('input[type="checkbox"]'), '每个 li 应含 checkbox');
+        assert.ok(li.classList.contains('vditor-task'));
+      });
+      const md = t.window.vditor.getValue();
+      assert.match(md, /^[-*] \[ \] todo$/m);
+      // Lute 序列化已勾选项为大写 X
+      assert.match(md, /^[-*] \[[xX]\] done$/m);
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('T7: 批量选区经 Ctrl+Shift+O 快捷键转换（快捷键路径的批量分支）', async () => {
+    const t = await boot(MD);
+    try {
+      const blocks = paras(t);
+      selectFromTo(t, blocks[0], blocks[1]);
+      fireKey(t, 'o', { ctrlKey: true, shiftKey: true });
+      await settle();
+
+      const ul = resetEl(t).querySelector('ul');
+      assert.ok(ul, '快捷键应触发批量转换');
+      assert.equal(ul.querySelectorAll(':scope > li').length, 2);
+    } finally {
+      t.window.close();
     }
   });
 });
