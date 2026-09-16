@@ -14,6 +14,8 @@
 	"ext.markdown.exportSuccess": "Export markdown to $1 success!",
 	"ext.markdown.noChromium": "Not chromium found, export fail.",
 	"ext.markdown.noClipboardImage": "There is not an image in the clipboard.",
+	"ext.markdown.externalFileChange": "$1 has been changed on disk outside VS Code.",
+	"ext.markdown.externalSaveFailed": "Could not save $1 after loading the disk version; the document is still marked dirty and the next save will retry.",
 	"ext.markdown.noPasteDirectory": "Not support paste directory.",
 	"ext.markdown.installXclip": "You need to install xclip command first.",
 	"ext.markdown.wikilinkNotFound": "Wikilink target not found: $1",

@@ -7,6 +7,10 @@ import { Handler } from '../common/handler';
 import { Util } from '../common/util';
 import { Holder } from '../service/markdown/holder';
 import { MarkdownService } from '../service/markdownService';
+import {
+    normalizeDiskText,
+    shouldAskAboutDiskChange,
+} from '../service/markdown/externalChangeGuard';
 import { Global, i18n } from '@/common/global';
 import { TelemetryService } from '@/service/telemetryService';
 import { openWikiLink } from '@/service/markdown/wikilink';
@@ -49,6 +53,16 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
     private static legacyGlobalStatePurged = false;
 
+    /**
+     * Pending "Load disk version / Keep my edits" decisions per document
+     * uri. Saves of a document with a pending decision are parked via
+     * onWillSaveTextDocument until the user answers, so autosave or a
+     * reflexive Ctrl+S cannot silently overwrite the external change the
+     * prompt is asking about.
+     */
+    private static pendingDiskDecisions = new Map<string, Promise<void>>();
+    private static diskDecisionGuardRegistered = false;
+
     private countStatus: vscode.StatusBarItem;
     private aiAbortController: AbortController | null = null;
     private aiCancellationSource: vscode.CancellationTokenSource | null = null;
@@ -66,6 +80,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         this.countStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
         this.purgeLegacyGlobalState();
         MarkdownEditorProvider.registerConfigSync(this.context);
+        MarkdownEditorProvider.registerDiskDecisionGuard(this.context);
     }
 
     static registerConfigSync(context: vscode.ExtensionContext): void {
@@ -92,6 +107,21 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     private static configSyncRegistered = false;
+
+    static registerDiskDecisionGuard(context: vscode.ExtensionContext): void {
+        if (MarkdownEditorProvider.diskDecisionGuardRegistered) {
+            return;
+        }
+        MarkdownEditorProvider.diskDecisionGuardRegistered = true;
+        context.subscriptions.push(
+            vscode.workspace.onWillSaveTextDocument(event => {
+                const pending = MarkdownEditorProvider.pendingDiskDecisions.get(event.document.uri.toString());
+                if (pending) {
+                    event.waitUntil(pending);
+                }
+            }),
+        );
+    }
 
     private purgeLegacyGlobalState() {
         if (MarkdownEditorProvider.legacyGlobalStatePurged) {
@@ -183,6 +213,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             }
             const nextContent = pendingDocumentSync;
             pendingDocumentSync = undefined;
+            rememberBufferText(document.getText().replace(/\r/g, ''));
             content = nextContent;
             await this.updateTextDocument(document, nextContent);
         };
@@ -203,6 +234,131 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             void flushDocumentSync();
             unregisterMarkdownWebview(uri);
         });
+
+        // VS Code never reloads a dirty document when its file changes on
+        // disk (no event fires), and this editor keeps the document dirty
+        // between input and save — so external writers would silently
+        // vanish and the next save clobber them. The Handler's fileChange
+        // watcher is the backstop: ask before anything is overwritten.
+        //
+        // "Load disk version" adopts the disk content and discards unsaved
+        // local edits — the same contract as VS Code's own conflict flow.
+        // Two accepted millisecond-scale windows remain (the extension API
+        // has no atomic read-modify-write): between the re-read and
+        // document.save(), and between releasing a save parked by the
+        // decision guard and the re-read itself.
+        const acknowledgedDiskTexts = new Set<string>();
+        // Recent pre-flush document snapshots: a save triggered while focus
+        // is outside the webview writes the applied document text, which a
+        // still-pending flush then advances past — the disk matching such a
+        // snapshot is an echo of our own save, not an external change.
+        const recentBufferTexts: string[] = [];
+        const rememberBufferText = (text: string) => {
+            const index = recentBufferTexts.indexOf(text);
+            if (index >= 0) {
+                recentBufferTexts.splice(index, 1);
+            }
+            recentBufferTexts.push(text);
+            if (recentBufferTexts.length > 8) {
+                recentBufferTexts.shift();
+            }
+        };
+        let externalPromptActive = false;
+        const loadDiskVersion = async (): Promise<void> => {
+            let diskBytes: Uint8Array;
+            try {
+                diskBytes = await vscode.workspace.fs.readFile(uri);
+            } catch {
+                return;
+            }
+            const latestText = normalizeDiskText(diskBytes);
+            if (latestText === undefined || latestText === content) {
+                return;
+            }
+            acknowledgedDiskTexts.clear();
+            if (documentSyncTimer) {
+                clearTimeout(documentSyncTimer);
+                documentSyncTimer = undefined;
+            }
+            pendingDocumentSync = undefined;
+            content = latestText;
+            this.updateCount(content);
+            try {
+                await this.updateTextDocument(document, latestText);
+                const saved = await document.save();
+                if (saved === false) {
+                    vscode.window.showWarningMessage(
+                        i18n('ext.markdown.externalSaveFailed', parse(uri.fsPath).base));
+                }
+                handler.emit("update", latestText);
+            } catch {
+                // the panel may have closed mid-flight; disk stays authoritative
+            }
+        };
+        const checkExternalDiskChange = async (): Promise<void> => {
+            if (externalPromptActive) return;
+            externalPromptActive = true;
+            try {
+                let diskBytes: Uint8Array;
+                try {
+                    diskBytes = await vscode.workspace.fs.readFile(uri);
+                } catch {
+                    return;
+                }
+                const diskText = normalizeDiskText(diskBytes);
+                if (diskText === undefined) {
+                    return;
+                }
+                const bufferTexts = [
+                    content,
+                    document.getText().replace(/\r/g, ''),
+                    ...recentBufferTexts,
+                ];
+                if (!shouldAskAboutDiskChange({ bufferTexts, diskText, isDirty: document.isDirty, acknowledgedDiskTexts })) {
+                    return;
+                }
+                // Park saves of this document until the user has decided,
+                // so autosave / Ctrl+S cannot silently overwrite the
+                // external change the prompt is asking about.
+                let resolveDecision: () => void = () => { };
+                const decision = new Promise<void>(resolve => { resolveDecision = resolve; });
+                MarkdownEditorProvider.pendingDiskDecisions.set(uri.toString(), decision);
+                try {
+                    const choice = await vscode.window.showInformationMessage(
+                        i18n('ext.markdown.externalFileChange', parse(uri.fsPath).base),
+                        'Load disk version',
+                        'Keep my edits',
+                    );
+                    if (choice === 'Load disk version') {
+                        // Release the decision BEFORE loading: loadDiskVersion
+                        // calls document.save(), whose onWillSaveTextDocument
+                        // would waitUntil this still-pending decision and
+                        // deadlock against it.
+                        resolveDecision();
+                        MarkdownEditorProvider.pendingDiskDecisions.delete(uri.toString());
+                        await loadDiskVersion();
+                    } else {
+                        // Keep my edits — dismissing the prompt (Esc) also
+                        // lands here: the non-destructive branch.
+                        acknowledgedDiskTexts.add(diskText);
+                    }
+                } finally {
+                    // idempotent: promise resolution and map deletion repeat safely
+                    resolveDecision();
+                    MarkdownEditorProvider.pendingDiskDecisions.delete(uri.toString());
+                }
+            } catch {
+                // the backstop must never surface its own failures
+            } finally {
+                externalPromptActive = false;
+            }
+            // the disk may have moved on while the prompt was up; re-check once
+            void checkExternalDiskChange();
+        };
+        handler.on("fileChange", () => {
+            void checkExternalDiskChange();
+        });
+
         handler.on("init", async () => {
             const viewerSettings = await ViewerSettingsService.loadForWebview();
             const workspaceUri = this.getWorkspaceUriByFileUtil(uri);

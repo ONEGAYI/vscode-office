@@ -14,6 +14,8 @@
 	"ext.markdown.exportSuccess": "Markdown の $1 へのエクスポートに成功しました！",
 	"ext.markdown.noChromium": "Chromium が見つかりません。エクスポートに失敗しました。",
 	"ext.markdown.noClipboardImage": "クリップボードに画像がありません。",
+	"ext.markdown.externalFileChange": "$1 は VS Code の外部で変更されました。",
+	"ext.markdown.externalSaveFailed": "ディスク版の読み込み後に $1 を保存できませんでした。ドキュメントは未保存のまま残り、次回の保存で再試行されます。",
 	"ext.markdown.noPasteDirectory": "ディレクトリの貼り付けはサポートされていません。",
 	"ext.markdown.installXclip": "先に xclip コマンドをインストールしてください。",
 	"ext.markdown.wikilinkNotFound": "ウィキリンクのターゲットが見つかりません: $1",

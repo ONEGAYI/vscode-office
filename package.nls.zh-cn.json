@@ -14,6 +14,8 @@
 	"ext.markdown.exportSuccess": "导出 Markdown 为 $1 成功！",
 	"ext.markdown.noChromium": "未找到 Chromium，导出失败。",
 	"ext.markdown.noClipboardImage": "剪贴板中没有图片。",
+	"ext.markdown.externalFileChange": "$1 已在 VS Code 外被修改。",
+	"ext.markdown.externalSaveFailed": "加载磁盘版本后保存 $1 失败；文档仍标记为已修改，下次保存将重试。",
 	"ext.markdown.noPasteDirectory": "不支持粘贴目录。",
 	"ext.markdown.installXclip": "请先安装 xclip 命令。",
 	"ext.markdown.wikilinkNotFound": "找不到双链目标：$1",

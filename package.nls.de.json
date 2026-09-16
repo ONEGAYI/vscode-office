@@ -14,6 +14,8 @@
 	"ext.markdown.exportSuccess": "Markdown erfolgreich nach $1 exportiert!",
 	"ext.markdown.noChromium": "Chromium nicht gefunden, Export fehlgeschlagen.",
 	"ext.markdown.noClipboardImage": "Kein Bild in der Zwischenablage.",
+	"ext.markdown.externalFileChange": "$1 wurde außerhalb von VS Code geändert.",
+	"ext.markdown.externalSaveFailed": "$1 konnte nach dem Laden der Datenträgerversion nicht gespeichert werden; das Dokument bleibt als geändert markiert und der nächste Speichervorgang wiederholt den Versuch.",
 	"ext.markdown.noPasteDirectory": "Einfügen von Verzeichnissen wird nicht unterstützt.",
 	"ext.markdown.installXclip": "Sie müssen zuerst den Befehl xclip installieren.",
 	"ext.markdown.wikilinkNotFound": "Wikilink-Ziel nicht gefunden: $1",

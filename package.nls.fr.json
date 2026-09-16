@@ -14,6 +14,8 @@
 	"ext.markdown.exportSuccess": "Exportation du Markdown vers $1 réussie !",
 	"ext.markdown.noChromium": "Chromium introuvable, échec de l'exportation.",
 	"ext.markdown.noClipboardImage": "Aucune image dans le presse-papiers.",
+	"ext.markdown.externalFileChange": "$1 a été modifié en dehors de VS Code.",
+	"ext.markdown.externalSaveFailed": "Impossible d'enregistrer $1 après le chargement de la version du disque ; le document reste marqué comme modifié et le prochain enregistrement réessaiera.",
 	"ext.markdown.noPasteDirectory": "Le collage de répertoires n'est pas pris en charge.",
 	"ext.markdown.installXclip": "Vous devez d'abord installer la commande xclip.",
 	"ext.markdown.wikilinkNotFound": "Cible du wikilink introuvable : $1",
