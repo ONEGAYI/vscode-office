@@ -155,6 +155,11 @@ handler.on("open", async (md) => {
           editor.switchEditMode(update.editMode);
         }
         if (update.markdownBlockLineNumbers !== undefined) {
+          // 同步 options：Settings 面板 toggle 初值与 Reset 重建都读它，
+          // 不回写会显示过期状态（下次点击方向与预期相反）
+          if (editor.vditor) {
+            editor.vditor.options.blockLineNumbers = update.markdownBlockLineNumbers !== false;
+          }
           BlockLineNumbers.setEnabled(update.markdownBlockLineNumbers !== false);
         }
         if (update.markdownHeadingBadges !== undefined) {

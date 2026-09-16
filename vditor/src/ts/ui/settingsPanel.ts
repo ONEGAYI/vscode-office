@@ -351,6 +351,14 @@ export const refreshSettingsPanel = (panelElement: HTMLElement, vditor: IVditor)
         button.classList.toggle(`${SETTINGS_PANEL_CLASS}__segment--current`, isCurrent);
         button.setAttribute("aria-pressed", String(isCurrent));
     }
+    // 行号开关绑定宿主配置（经 options 下发），面板重开/Reset 重建后
+    // 需按当前 options 刷新显示态，否则显示过期值
+    const lineNumbersToggle = panelElement.querySelector(`[data-toggle-key="${BLOCK_LINE_NUMBERS_KEY}"]`);
+    if (lineNumbersToggle) {
+        const on = vditor.options.blockLineNumbers !== false;
+        lineNumbersToggle.classList.toggle(`${SETTINGS_PANEL_CLASS}__toggle--on`, on);
+        lineNumbersToggle.setAttribute("aria-checked", String(on));
+    }
 };
 
 const isAISettingsAddRowOpen = (panelElement: HTMLElement, selector: string) => {

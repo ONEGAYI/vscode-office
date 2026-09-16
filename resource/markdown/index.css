@@ -390,18 +390,28 @@ body.vmd-block-linenumbers .vditor-wysiwyg .vditor-reset {
        blockquote bar on dark themes and stays a light guide on white.
        background-origin defaults to padding-box, same coordinate frame
        as the numbers themselves; the engine sets no background-image
-       on the reset, so nothing is overridden. */
+       on the reset, so nothing is overridden. repeat (default) guards
+       against engines sizing the local tile to one viewport height:
+       the 90deg gradient is uniform vertically, so tiling is seamless. */
     background-image: linear-gradient(90deg,
             transparent 35px,
             rgba(128, 128, 128, 0.5) 35px,
             rgba(128, 128, 128, 0.5) 36px,
             transparent 36px);
-    background-repeat: no-repeat;
     background-attachment: local;
 }
 
 body.vmd-linenumbers-off .vditor [data-lineno]::after {
     content: none;
+}
+
+/* Block drag handle: the engine hides Hx badges (:before) while the
+   handle is docked on a heading (see _blockHandle.less); the handle
+   spans [-52..-32]px and would cover the number column — hide the
+   number for the hovered block too (tables anchor on th, see below). */
+.vditor .vditor-reset > [data-lineno].vditor-block-handle-target::after,
+.vditor table[data-lineno].vditor-block-handle-target th:first-child::after {
+    visibility: hidden;
 }
 
 /* ── Heading badges opt-out (markdownHeadingBadges=false) ───────────────

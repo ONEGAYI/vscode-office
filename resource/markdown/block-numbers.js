@@ -35,11 +35,18 @@
  *     the leading `---` parses as a plain hr (the source swallowed the
  *     whole document into one block)
  *
- * Known limitations shared with the source (documented, not fixed):
- *   - html blocks and footnote-definition sections scan as ordinary
- *     paragraph lines (they usually align by accident)
- *   - two lists separated only by a blank line merge into one numbered
- *     block (lazy-continuation looseness)
+ * Known limitations (documented, not fixed — verified against this
+ * fork's Lute; when any of these fires, the block-count guard in sync()
+ * degrades to "no numbers shown" rather than wrong numbers):
+ *   - mixed list markers in one run ("- a" then "* b", "1." then "2)")
+ *     merge into one scanned block where Lute splits them
+ *   - a table line right after a quote (no blank line) joins the quote
+ *     in Lute but breaks it here
+ *   - an ordered list not starting at 1 does not interrupt a paragraph
+ *   - setext headings ("para" + "---"), html comments, 4+ backtick
+ *     fences are not recognized
+ *   - footnote definitions are aggregated by Lute into a trailing
+ *     block, so both count and order can diverge
  *
  * Wiring (see resource/markdown/index.html + index.js):
  *   <script src="block-numbers.js"></script>  then
@@ -63,13 +70,29 @@
   var R_HR = /^(---|[*]{3}|___)$/;
   var R_LI = /^[-*+] /;
   var R_OL = /^[0-9]+[.)] /;
-  var R_INDENT = /^ +[^ ]/;
+  // 懒延续缩进行：空格或 Tab（编辑器 Tab 键即插入 \t，见 index.js tab:'\t'）
+  var R_INDENT = /^[\t ]+\S/;
   var FENCE = '```';
 
   function isBlockStart(s) {
     return R_HEADING.test(s) || R_LI.test(s) || R_OL.test(s)
-      || s.indexOf(FENCE) === 0 || s.charAt(0) === '|' || s.charAt(0) === '>'
+      || s.indexOf(FENCE) === 0 || s.indexOf('$$') === 0
+      || s.charAt(0) === '|' || s.charAt(0) === '>'
       || R_HR.test(s);
+  }
+
+  /**
+   * 列表行后无空行紧跟时哪些块起始形态要断块（对齐 Lute 实测）：
+   * 顶格的 heading/quote/fence/$$/hr 分块；缩进的同类行（如列表项内
+   * 嵌套的代码围栏 "  ```"）与表格行、普通文本并入列表内容。
+   */
+  function isListBreakingBlockStart(rawLine) {
+    if (/^[\t ]/.test(rawLine)) {
+      return false;
+    }
+    var s = rawLine.trim();
+    return R_HEADING.test(s) || s.charAt(0) === '>'
+      || s.indexOf(FENCE) === 0 || s.indexOf('$$') === 0 || R_HR.test(s);
   }
 
   /**
@@ -96,16 +119,28 @@
       starts.push(i + 1);
       if (R_HEADING.test(tr) || R_HR.test(tr)) {
         i++;
-      } else if (tr.indexOf(FENCE) === 0) {
-        i++;
-        while (i < L.length && L[i].trim().indexOf(FENCE) !== 0) i++;
-        if (i < L.length) i++;
+      } else if (tr.indexOf(FENCE) === 0 || tr.indexOf('$$') === 0) {
+        // fence / 数学块：单行自闭合（$$..$$ 同行闭合）只占一行，
+        // 否则吞到闭合行（$$ 或 ```）或 EOF
+        if (tr.indexOf('$$') === 0 && tr.length > 4 && tr.lastIndexOf('$$') > 0) {
+          i++;
+        } else {
+          var closer = tr.indexOf(FENCE) === 0 ? FENCE : '$$';
+          i++;
+          while (i < L.length && L[i].trim().indexOf(closer) !== 0) i++;
+          if (i < L.length) i++;
+        }
       } else if (tr.charAt(0) === '|') {
         while (i < L.length && L[i].trim().charAt(0) === '|') i++;
       } else if (tr.charAt(0) === '>') {
-        while (i < L.length && L[i].trim() !== '' && L[i].trimStart().charAt(0) === '>') i++;
+        // 引用块懒延续（对齐 Lute）：非空行只要不是块起始形态就并入引用
+        while (i < L.length && L[i].trim() !== '') {
+          if (i > 0 && L[i].trim().charAt(0) !== '>' && isBlockStart(L[i].trim())) break;
+          i++;
+        }
       } else if (R_LI.test(tr) || R_OL.test(tr)) {
         var listKind = R_LI.test(tr) ? 'ul' : 'ol';
+        var listFirst = i;
         while (i < L.length) {
           if (L[i].trim() === '') {
             var nx = i + 1;
@@ -125,6 +160,11 @@
             } else {
               break;
             }
+          } else if (i > listFirst && isListBreakingBlockStart(L[i])) {
+            // 列表行后无空行紧跟的顶格块起始形态：Lute 分块（实测
+            // heading/quote/fence/hr 断开），缩进续行、表格行与普通
+            // 文本并入列表
+            break;
           } else {
             i++;
           }
@@ -205,12 +245,22 @@
     try {
       starts = computeBlockStarts(currentEditor.getValue() || '');
     } catch (e) {
-      starts = null; // 回退块序号，永不显示错行号
+      starts = null;
+    }
+
+    // 映射安全防线：块数与起点数不一致说明扫描器与 Lute 解析分叉
+    // （html 块、footnote 聚合等），按序 1:1 映射会静默错号——全部不编号
+    if (!starts || starts.length !== blocks.length) {
+      var staleAll = reset.querySelectorAll('[' + ATTR + ']');
+      for (var s = 0; s < staleAll.length; s++) {
+        staleAll[s].removeAttribute(ATTR);
+        staleAll[s].style.removeProperty('--lineno');
+      }
+      return;
     }
 
     for (var k = 0; k < blocks.length; k++) {
-      var n = starts && k < starts.length ? starts[k] : (k + 1);
-      var val = String(n);
+      var val = String(starts[k]);
       if (blocks[k].getAttribute(ATTR) !== val) {
         blocks[k].setAttribute(ATTR, val);
         // CSS 变量随属性同源：table 的行号锚在 th 上，attr() 无法跨元素，
@@ -219,7 +269,7 @@
         blocks[k].style.setProperty('--lineno', '"' + val + '"');
       }
     }
-    // 块数多于 starts（或块退化为不可编号形态）时清掉过期行号
+    // 块退化为不可编号形态（如变空 p）时清掉过期行号
     var stale = reset.querySelectorAll('[' + ATTR + ']');
     for (var m = 0; m < stale.length; m++) {
       if (blocks.indexOf(stale[m]) < 0) {
@@ -270,6 +320,12 @@
   function install(editor, options) {
     if (!editor) return;
     if (currentEditor === editor) { sync(); return; }
+    // 换编辑器实例时旧 observer 仍观察旧根，先断开（防御：当前接线
+    // 每 webview 仅 install 一次，不触发；保持模块可安全复用）
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
     currentEditor = editor;
     enabled = options && options.enabled !== undefined ? !!options.enabled : true;
     setEnabled(enabled);

@@ -482,11 +482,20 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             if (mode === "wysiwyg" || mode === "ir") {
                 Global.updateConfig("editMode", mode);
             }
-        }).on("blockLineNumbers", (enabled: unknown) => {
-            if (typeof enabled === "boolean") {
-                // 写配置后经 MARKDOWN_SYNC_CONFIG_KEYS 广播，所有面板即时生效
-                Global.updateConfig("markdownBlockLineNumbers", enabled);
+        }).on("blockLineNumbers", async (enabled: unknown) => {
+            if (typeof enabled !== "boolean") {
+                return;
             }
+            // Global.updateConfig 只写 global 作用域：当 workspace 存在覆盖时
+            // effective 值不变、onDidChangeConfiguration 不触发，开关静默失效。
+            // 有 workspace 覆盖时必须写回 workspace 作用域
+            const config = vscode.workspace.getConfiguration("vscode-office");
+            const inspect = config.inspect("markdownBlockLineNumbers");
+            const target = inspect?.workspaceValue !== undefined
+                ? vscode.ConfigurationTarget.Workspace
+                : vscode.ConfigurationTarget.Global;
+            const newValue = inspect?.defaultValue === enabled ? undefined : enabled;
+            await config.update("markdownBlockLineNumbers", newValue, target);
         }).on("img", async (payload) => {
             const imgData: string = typeof payload === 'string' ? payload : payload.data;
             const ext: string = typeof payload === 'string' ? 'png' : (payload.ext || 'png');

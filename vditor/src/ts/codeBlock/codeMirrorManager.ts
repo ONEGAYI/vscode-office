@@ -2165,7 +2165,14 @@ export const flushCodeMirrorToSyncCode = (vditor: IVditor) => {
         }
         window.clearTimeout(binding.syncTimer);
         window.clearTimeout(binding.previewTimer);
-        binding.syncCode.textContent = binding.view.state.doc.toString();
+        // 脏检查：textContent 赋值即使同值也按 "replace all" 产生
+        // childList mutation，会自激励编辑面级 MutationObserver
+        // （如 block-numbers 行号模块：getValue→本函数→mutation→rAF 重扫→
+        // getValue…每帧全文序列化的死循环），值未变时不得写 DOM
+        const doc = binding.view.state.doc.toString();
+        if (binding.syncCode.textContent !== doc) {
+            binding.syncCode.textContent = doc;
+        }
     }
 };
 

@@ -362,16 +362,25 @@ export const handleFrontMatterEditorClick = (
 export const setupFrontMatterYamlEditors = (_vditor: IVditor) => {
 };
 
-export const flushFrontMatterYamlToSyncCode = (vditor: IVditor) => {
+export const flushFrontMatterYamlToSyncCode = (_vditor: IVditor) => {
     if (!activeFrontMatterPopover) {
         return;
     }
     const { blockElement, view } = activeFrontMatterPopover;
     const syncCode = blockElement.querySelector("code[data-type='yaml-front-matter']") as HTMLElement | null;
     if (syncCode) {
-        syncCode.textContent = view.state.doc.toString();
+        // 脏检查：textContent 同值赋值也按 "replace all" 产生 childList
+        // mutation，会自激励编辑面级 MutationObserver（行号模块每帧
+        // getValue——见 flushCodeMirrorToSyncCode 同款修复）
+        const doc = view.state.doc.toString();
+        if (syncCode.textContent !== doc) {
+            syncCode.textContent = doc;
+        }
     }
-    hideFrontMatterEditorPopover(vditor);
+    // 不在此关闭弹窗：flush 随每次 getValue 执行（含行号模块的逐帧
+    // 重扫），无条件 hide 会把正在编辑的 YAML 弹窗立即关死。弹窗由
+    // 自身的保存/取消/失焦路径显式关闭，且 popover 挂在编辑面外的
+    // mode 容器上，不会进入导出 clone（buildEditorHtmlForMarkdown）
 };
 
 export const isFrontMatterYamlCmFocused = () => {

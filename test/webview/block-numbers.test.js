@@ -274,13 +274,21 @@ describe('block-numbers: block scanner contract (S)', { skip: MODULE_READY ? fal
     assert.deepEqual(api.computeBlockStarts('```\nnever closed\nstill code\n'), [1]);
   });
 
-  it('S5: blockquote stops at the first non-> line', () => {
-    assert.deepEqual(api.computeBlockStarts('> q1\n> q2\nplain\n'), [1, 3]);
+  it('S5: blockquote lazy continuation merges non-block lines (Lute parity)', () => {
+    // Lute 实测 '> q1\n> q2\nplain' 渲染为单个 BLOCKQUOTE：非 > 前缀的
+    // 非块起始行是懒延续，并入引用块
+    assert.deepEqual(api.computeBlockStarts('> q1\n> q2\nplain\n'), [1]);
+    // 懒延续 + 后续标题：引用吃到空行为止，标题独立成块（第 4 行）
+    assert.deepEqual(api.computeBlockStarts('> q1\nplain\n\n# after\n'), [1, 4]);
+    // 块起始形态行中断懒延续
+    assert.deepEqual(api.computeBlockStarts('> q1\nplain\n# now heading\n'), [1, 3]);
   });
 
   it('S6: list swallows indented continuations after blank lines, breaks on a flush paragraph', () => {
-    // lazy continuation：空行 + 缩进续行仍属列表块（段落从第 5 行起）
+    // lazy continuation：空行 + 缩进续行（空格或 Tab——编辑器 Tab 键即
+    // 插入 \t）仍属列表块（段落从第 5 行起）
     assert.deepEqual(api.computeBlockStarts('- a\n\n  indented continues\n\nplain para\n'), [1, 5]);
+    assert.deepEqual(api.computeBlockStarts('- a\n\n\tindented tab\n\nplain para\n'), [1, 5]);
   });
 
   it('S7: leading --- without a closing fence is a plain hr, not frontmatter', () => {
@@ -306,6 +314,39 @@ describe('block-numbers: block scanner contract (S)', { skip: MODULE_READY ? fal
   it('S10: blank-line-separated same-kind list stays one loose block', () => {
     assert.deepEqual(api.computeBlockStarts('- a\n\n- b\n'), [1]);
     assert.deepEqual(api.computeBlockStarts('1. one\n\n2. two\n'), [1]);
+  });
+
+  // 列表行后无空行紧跟的块起始形态：Lute 分块（实测 heading/quote/fence/hr
+  // 各自成为独立顶层块），表格行并入列表内容
+  it('S11: block starts right after a list line (no blank) break the list', () => {
+    assert.deepEqual(api.computeBlockStarts('- a\n# H\n\ntext\n'), [1, 2, 4]);
+    assert.deepEqual(api.computeBlockStarts('- a\n> q\n\ntext\n'), [1, 2, 4]);
+    assert.deepEqual(api.computeBlockStarts('- a\n```\ncode\n```\n'), [1, 2]);
+    assert.deepEqual(api.computeBlockStarts('- a\n---\n'), [1, 2]);
+    // 表格行被 Lute 吸收进列表（实测顶层仅 ul 一个块）
+    assert.deepEqual(api.computeBlockStarts('- a\n| x |\n|---|\n| y |\n'), [1]);
+    // 缩进的块起始行是列表项内容（Lute 并入列表，不 break）——审查 R2
+    // 抓到的回归：列表项内嵌围栏是常见形态
+    assert.deepEqual(api.computeBlockStarts('- a\n  # H\n'), [1]);
+    assert.deepEqual(api.computeBlockStarts('- a\n  ```\n  code\n  ```\n'), [1]);
+  });
+
+  // quote 懒延续在 $$ 块起始行中断（isBlockStart 与列表路径对称，
+  // R2 抓到的回归）且段落同样在 $$ 块起始行断开（Lute 均分块）
+  it('S12: $$ block starts break quotes, lists and paragraphs alike', () => {
+    assert.deepEqual(api.computeBlockStarts('> q\n$$\nx\n$$\n'), [1, 2]);
+    assert.deepEqual(api.computeBlockStarts('para\n$$\nx\n$$\n'), [1, 2]);
+    assert.deepEqual(api.computeBlockStarts('- a\n$$\nx\n$$\n'), [1, 2]);
+  });
+
+  // $$ 数学块按 fence 处理（Lute 渲染为单个 math-block 顶层块）
+  it('S13: $$ math blocks scan as one block, closed or same-line', () => {
+    assert.deepEqual(api.computeBlockStarts('$$\n\na=1\n\nb=2\n$$\n\nafter\n'), [1, 8]);
+    assert.deepEqual(api.computeBlockStarts('$$a=1$$\n\nafter\n'), [1, 3]);
+  });
+
+  it('S14: CRLF input scans like LF', () => {
+    assert.deepEqual(api.computeBlockStarts('# H\r\n\r\npara1\r\n\r\npara2\r\n'), [1, 3, 5]);
   });
 });
 
@@ -361,13 +402,14 @@ describe('block-numbers: module contract on IR editor (N)', { skip: DIST_READY &
     assert.deepEqual(linenosOf(document), [head, last]);
   });
 
-  it('N4: getValue() output never contains data-lineno (Lute fence)', () => {
+  it('N4: getValue() output never contains data-lineno or --lineno (Lute fence)', () => {
     const value = ctx.window.vditor.getValue();
     assert.ok(typeof value === 'string');
     assert.ok(!value.includes('data-lineno'), JSON.stringify(value.slice(0, 200)));
+    assert.ok(!value.includes('--lineno'), JSON.stringify(value.slice(0, 200)));
   });
 
-  it('N5: disabled install injects nothing; setEnabled re-installs', async () => {
+  it('N5: disabled install injects nothing; setEnabled re-installs with a live observer', async () => {
     const b2 = await boot(MD_N);
     try {
       b2.window.eval(fs.readFileSync(MODULE_PATH, 'utf8'));
@@ -377,13 +419,95 @@ describe('block-numbers: module contract on IR editor (N)', { skip: DIST_READY &
       b2.window.BlockLineNumbers.setEnabled(true);
       await sleep(120);
       assert.deepEqual(linenosOf(b2.document), anchorStarts(b2.window.vditor.getValue()));
+      // observer 重建检测：不手动 sync，直接改 DOM，rAF 后必须自动重编号
+      // （setEnabled 内部的同步 sync() 掩盖不了 observer 缺失——之前缺失时此步会漏更新）
+      const blocks = b2.document.querySelectorAll('.vditor-reset > [data-lineno]');
+      const victim = blocks[blocks.length - 1];
+      victim.remove();
+      await sleep(200);
+      const after = linenosOf(b2.document);
+      assert.equal(after.length, blocks.length - 1, 'observer did not re-number after DOM change');
     } finally {
       b2.window.close();
     }
   });
+
+  it('N6: scanner/Lute divergence degrades to no numbers, never wrong ones', async () => {
+    // 混合标记列表（'- a' 连 '* b'）：Lute 拆两个 ul（DOM 3 块），扫描器
+    // 并为一块（2 起点）——数量防护必须全部不编号而不是按序错配
+    const b3 = await boot('- alpha\n* beta\n\nplain para\n');
+    try {
+      b3.window.eval(fs.readFileSync(MODULE_PATH, 'utf8'));
+      b3.window.BlockLineNumbers.install(b3.window.vditor);
+      await sleep(120);
+      const resetChildren = b3.document.querySelectorAll('.vditor-reset > ul, .vditor-reset > p').length;
+      assert.ok(resetChildren >= 3, `precondition: Lute split the lists (got ${resetChildren})`);
+      assert.equal(linenosOf(b3.document).length, 0, 'divergent document must show no numbers');
+    } finally {
+      b3.window.close();
+    }
+  });
 });
 
-// ── C：行号 CSS 契约 ────────────────────────────────────────────────────
+// ── D：扫描器块数与 Lute 顶层块数对照 ───────────────────────────────────
+
+// 数量一致是行号 1:1 映射的前提（数量不等时模块全部不编号）。此组把
+// "扫描器块序列 = Lute 渲染块序列"钉进契约——S 组纯函数自洽测不出的
+// 语义分叉（审查发现的四类形态正是这样漏网的）在此被真实引擎拦截
+describe('block-numbers: scanner parity with real Lute (D)', { skip: DIST_READY ? false : '依赖 vditor/dist 构建产物' }, () => {
+  let api;
+  let lute;
+  let parse;
+  before(() => {
+    api = loadModuleApi();
+  });
+
+  before(() => {
+    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', { runScripts: 'dangerously', pretendToBeVisual: true });
+    dom.window.eval(fs.readFileSync(path.join(DIST, 'js', 'lute', 'lute.min.js'), 'utf8'));
+    const Lute = dom.window.Lute;
+    Lute.PutEmphasisText = false;
+    lute = Lute.New();
+    parse = (html) => new dom.window.DOMParser().parseFromString(html, 'text/html');
+  });
+
+  const PARITY_CASES = [
+    ['plain', '# H\n\ntext\n'],
+    ['list+heading-nows', '- a\n# H\n\ntext\n'],
+    ['list+quote-nows', '- a\n> q\n\ntext\n'],
+    ['list+table-nows', '- a\n| x |\n|---|\n| y |\n'],
+    ['list+fence-nows', '- a\n```\ncode\n```\n'],
+    ['list+hr-nows', '- a\n---\n'],
+    ['list+indented-heading', '- a\n  # H\n'],
+    ['list+indented-fence', '- a\n  ```\n  code\n  ```\n'],
+    ['quote-lazy', '> q1\n> q2\nplain\n'],
+    ['quote-lazy-then-heading', '> q1\nplain\n\n# after\n'],
+    ['quote+math', '> q\n$$\nx\n$$\n'],
+    ['para+math', 'para\n$$\nx\n$$\n'],
+    ['list+math', '- a\n$$\nx\n$$\n'],
+    ['tab-cont', '- a\n\n\tindented\n\nplain\n'],
+    ['math-multiline', '$$\n\na=1\n\nb=2\n$$\n\nafter\n'],
+    ['math-inline-block', '$$a=1$$\n\nafter\n'],
+    ['mixed-kinds-lists', '- a\n- b\n\n1. one\n2. two\n'],
+    ['same-kind-loose', '- a\n\n- b\n'],
+  ];
+
+  for (const [name, md] of PARITY_CASES) {
+    it(`D: ${name} — scanner block count equals Lute top-level count`, () => {
+      const html = lute.Md2VditorIRDOM(md);
+      const tops = Array.from(parse(html).body.children)
+        .map(el => el.tagName.toLowerCase() + (el.getAttribute('data-type') ? `[${el.getAttribute('data-type')}]` : ''));
+      const luteCount = tops.length;
+      const starts = api.computeBlockStarts(md);
+      assert.equal(
+        starts.length, luteCount,
+        JSON.stringify({ tops, starts }),
+      );
+    });
+  }
+});
+
+  // ── C：行号 CSS 契约 ────────────────────────────────────────────────────
 
 describe('block-numbers: CSS contract (C)', () => {
   let css;
@@ -450,9 +574,9 @@ describe('block-numbers: heading badge always-on CSS contract (H)', () => {
     assert.ok(m, 'always-on h1 badge rule missing in _wysiwyg.less');
   });
 
-  it('H3: badge top no longer depends on the JS-synced CSS variable', () => {
+  it('H3: badge top is fixed at 0 (no JS-synced CSS variable)', () => {
     const less = fs.readFileSync(IR_LESS_PATH, 'utf8');
-    // 徽标规则内固定 top（后声明覆盖 mixin 的 var(--vditor-block-marker-top)）
+    // mixin 已固定 top: 0（原 var(--vditor-block-marker-top) 随死代码清理移除）
     assert.match(less, /h[1-6]:before[\s\S]{0,600}?top:\s*0/);
   });
 
@@ -505,7 +629,9 @@ describe('block-numbers: wiring contract (W)', () => {
     assert.match(js, /emit\('blockLineNumbers'/);
     const provider = fs.readFileSync(PROVIDER_PATH, 'utf8');
     assert.match(provider, /on\(['"]blockLineNumbers['"]/);
-    assert.match(provider, /updateConfig\(['"]markdownBlockLineNumbers['"]/);
+    // workspace 覆盖存在时须写回 workspace 作用域，否则开关静默失效
+    assert.match(provider, /update\(['"]markdownBlockLineNumbers['"],\s*newValue,\s*target\)/);
+    assert.match(provider, /ConfigurationTarget\.Workspace/);
   });
 });
 
