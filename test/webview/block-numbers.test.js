@@ -420,11 +420,12 @@ describe('block-numbers: CSS contract (C)', () => {
   });
 
   it('C7: faint vertical rule separates the number column from badges', () => {
-    // 竖线挂在 reset 自身 ::before（引擎未占用），门控随行号开启；
-    // 中性灰 50% 透明（暗底约合引用线一半亮度，亮底为浅引导线）
-    assert.match(css, /vmd-block-linenumbers[^{]*vditor-reset::?before[^{]*\{[^}]*content:\s*''/);
-    assert.match(css, /vmd-block-linenumbers[^{]*vditor-reset::?before[^{]*\{[^}]*width:\s*1px/);
-    assert.match(css, /vmd-block-linenumbers[^{]*vditor-reset::?before[\s\S]{0,300}?background:\s*rgba\(128,\s*128,\s*128,\s*0\.5\)/);
+    // 竖线画为 reset 的背景渐变 + background-attachment:local——绝对定位
+    // ::before 的 top/bottom:0 只解析到一屏高的 padding box，滚动后线消失；
+    // local 背景随滚动内容平铺整个滚动区，线贯穿全文档
+    assert.match(css, /vmd-block-linenumbers[^{]*vditor-reset[^{]*\{[^}]*background-image:\s*linear-gradient\(90deg/);
+    assert.match(css, /rgba\(128,\s*128,\s*128,\s*0\.5\)\s*35px/);
+    assert.match(css, /vmd-block-linenumbers[^{]*vditor-reset[^{]*\{[^}]*background-attachment:\s*local/);
   });
 });
 
