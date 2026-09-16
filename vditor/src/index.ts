@@ -2,7 +2,7 @@ import "./assets/less/index.less";
 import * as adapterRender from "./ts/markdown/adapterRender";
 import { codeRender } from "./ts/markdown/codeRender";
 import { codeMirrorPreviewRender } from "./ts/codeBlock/codeMirrorPreviewRender";
-import { renderCodeBlocks } from "./ts/codeBlock/codeMirrorManager";
+import { renderCodeBlocks, setupLazyCodeMirrorObserver } from "./ts/codeBlock/codeMirrorManager";
 import { mathRender } from "./ts/markdown/mathRender";
 import { mermaidRender } from "./ts/markdown/mermaidRender";
 import { outlineRender } from "./ts/markdown/outlineRender";
@@ -386,6 +386,10 @@ class Vditor {
                     processCodeRender(item, this.vditor);
                 });
             ensureEditorBoundaryParagraphs(this.vditor.ir.element);
+            // 与 renderDomByMd（wysiwyg 分支）对齐：重绘后重新挂载代码块 CodeMirror，
+            // 否则外部更新（setValue）后代码块退化为纯文本，需点击才恢复
+            renderCodeBlocks(this.vditor);
+            setupLazyCodeMirrorObserver(this.vditor);
             processAfterRender(this.vditor, {
                 enableAddUndoStack: true,
                 enableHint: false,
@@ -556,9 +560,8 @@ class Vditor {
                 .forEach((item: HTMLElement) => {
                     processCodeRender(item, this.vditor);
                 });
-            if (this.vditor.currentMode === "wysiwyg") {
-                renderCodeBlocks(this.vditor);
-            }
+            // 与 setValue 一致：ir 分支同样需要重新挂载代码块 CodeMirror
+            renderCodeBlocks(this.vditor);
             recordHistoryChange(this.vditor);
         }
     }
