@@ -295,12 +295,154 @@ export const insertBeforeBlock = (vditor: IVditor, event: KeyboardEvent, range: 
     return false;
 };
 
+// 可批量列表化的顶层块：段落/标题直接转列表项，已有列表整体参与切换/取消；
+// 表格/引用/代码块等结构块保持原样，并把相邻转换段隔断成独立列表
+const BATCH_PARAGRAPH = /^(?:P|H[1-6])$/;
+const BATCH_LIST = /^(?:UL|OL)$/;
+
+const listTagOfType = (type: string) => (type === "ordered-list" ? "ol" : "ul");
+
+/** 顶层列表块是否已是目标类型：任务列表要求全部 li 已带 checkbox，
+ *  普通无序列表要求全部 li 不带（混合态视为待切换） */
+const isTargetListBlock = (block: Element, type: string) => {
+    if (block.tagName !== listTagOfType(type).toUpperCase()) {
+        return false;
+    }
+    const lis = Array.from(block.children).filter((item) => item.tagName === "LI");
+    return lis.length > 0 && lis.every((li) =>
+        type === "check" ? li.classList.contains("vditor-task") : !li.classList.contains("vditor-task"));
+};
+
+/** 块转为目标类型的 li HTML：段落/标题构造新 li，已有列表的 li 整体搬入。
+ *  搬入时清掉 data-marker——异标记 li 经 spin 会拆成多个列表 */
+const listItemHTML = (block: HTMLElement, type: string): string => {
+    if (BATCH_PARAGRAPH.test(block.tagName)) {
+        const clone = block.cloneNode(true) as HTMLElement;
+        // ir 模式 heading 的块级 marker（"# "）随 innerHTML 进入 li 会破坏
+        // spin 重整，剔除后再搬运；行内格式 marker（strong/code 等）是语法
+        // 载体，必须保留，故仅按 heading 特征收窄剔除
+        clone.querySelectorAll(".vditor-ir__marker--heading, [data-type='heading-marker']")
+            .forEach((marker) => marker.remove());
+        const inner = clone.innerHTML.trimLeft();
+        return type === "check"
+            ? `<li class="vditor-task"><input type="checkbox" /> ${inner}</li>`
+            : `<li>${inner}</li>`;
+    }
+    return Array.from(block.children).filter((item) => item.tagName === "LI").map((item) => {
+        const li = item.cloneNode(true) as HTMLElement;
+        // 仅处理该 li 自身的 checkbox（直接子级）——嵌套子列表的项不属于本层
+        const input = li.querySelector(":scope > input");
+        if (type === "check") {
+            if (!input) {
+                li.insertAdjacentHTML("afterbegin", `<input type="checkbox" />`);
+            }
+            li.classList.add("vditor-task");
+        } else if (input) {
+            input.remove();
+            li.classList.remove("vditor-task");
+        }
+        li.removeAttribute("data-marker");
+        return li.outerHTML;
+    }).join("");
+};
+
+/** 取消目标列表：每个 li 回段落（去 checkbox），列表移除 */
+const unwrapListBlock = (block: HTMLElement) => {
+    let html = "";
+    Array.from(block.children).filter((item) => item.tagName === "LI").forEach((item) => {
+        const li = item.cloneNode(true) as HTMLElement;
+        const input = li.querySelector(":scope > input");
+        if (input) {
+            input.remove();
+        }
+        li.classList.remove("vditor-task");
+        // 块级子元素（嵌套列表/松散列表的 p）不能拼进 <p>：HTML 解析器按
+        // p 的内容模型会拆散它并留下空段落，提升为兄弟块
+        const nested = Array.from(li.children).filter((child) => /^(?:UL|OL|P)$/.test(child.tagName));
+        nested.forEach((child) => child.remove());
+        const inline = li.innerHTML.trimLeft();
+        if (inline) {
+            html += `<p data-block="0">${inline}</p>`;
+        }
+        html += nested.map((child) => child.outerHTML).join("");
+    });
+    block.insertAdjacentHTML("beforebegin", html);
+    block.remove();
+};
+
+/**
+ * 跨块选区批量切换列表（toggle）：选区整体已是目标列表 → 全部取消回
+ * 段落；否则全部转为目标列表（段落变 li、异类型列表的 li 吸并，相邻
+ * 连续段合成同一列表，结构块隔断处各自成列表）。
+ * 非跨块选区返回 false，交由单块/整列表路径处理。
+ */
+const batchToggleList = (vditor: IVditor, range: Range, type: string): boolean => {
+    const startBlock = hasClosestByAttribute(range.startContainer, "data-block", "0") as HTMLElement;
+    const endBlock = hasClosestByAttribute(range.endContainer, "data-block", "0") as HTMLElement;
+    if (!startBlock || !endBlock || startBlock === endBlock) {
+        return false;
+    }
+    const blocks = Array.from(vditor[vditor.currentMode].element.children);
+    const startIndex = blocks.indexOf(startBlock);
+    const endIndex = blocks.indexOf(endBlock);
+    if (startIndex === -1 || endIndex === -1) {
+        return false;
+    }
+    const selected = blocks.slice(Math.min(startIndex, endIndex), Math.max(startIndex, endIndex) + 1);
+    const convertible = selected.filter((block) =>
+        BATCH_PARAGRAPH.test(block.tagName) || BATCH_LIST.test(block.tagName));
+    if (convertible.length === 0) {
+        return false;
+    }
+
+    if (convertible.every((block) => BATCH_LIST.test(block.tagName) && isTargetListBlock(block, type))) {
+        convertible.forEach((block) => unwrapListBlock(block as HTMLElement));
+        return true;
+    }
+
+    const listTag = listTagOfType(type);
+    let itemsHTML = "";
+    let firstSource: HTMLElement = null;
+    let sources: HTMLElement[] = [];
+    const flushGroup = () => {
+        if (sources.length === 0) {
+            return;
+        }
+        // 带 data-marker 与既有切换路径一致（blockHandle/直播 marker 依赖该属性）
+        const marker = type === "ordered-list" ? "1." : "*";
+        firstSource.insertAdjacentHTML("beforebegin",
+            `<${listTag} data-block="0" data-marker="${marker}">${itemsHTML}</${listTag}>`);
+        sources.forEach((block) => block.remove());
+        itemsHTML = "";
+        firstSource = null;
+        sources = [];
+    };
+    selected.forEach((block) => {
+        const element = block as HTMLElement;
+        if (BATCH_PARAGRAPH.test(block.tagName) || BATCH_LIST.test(block.tagName)) {
+            if (sources.length === 0) {
+                firstSource = element;
+            }
+            itemsHTML += listItemHTML(element, type);
+            sources.push(element);
+        } else {
+            flushGroup();
+        }
+    });
+    flushGroup();
+    return true;
+};
+
 export const listToggle = (vditor: IVditor, range: Range, type: string, cancel = true) => {
     const itemElement = hasClosestByMatchTag(range.startContainer, "LI");
     vditor[vditor.currentMode].element.querySelectorAll("wbr").forEach((wbr) => {
         wbr.remove();
     });
     range.insertNode(document.createElement("wbr"));
+
+    if (batchToggleList(vditor, range, type)) {
+        return;
+    }
 
     if (cancel && itemElement) {
         // 取消
