@@ -370,6 +370,46 @@ describe('outline drag reorder', { skip: !DIST_READY }, () => {
           ctx.window.close();
         }
       });
+
+      it('D10: 指示线单线锚定插入边界 — below 与下一行 above 同位置', async () => {
+        const ctx = await boot(MD_DND, { mode });
+        try {
+          await settle();
+          const sourceRow = outlineRows(ctx)[2]; // 拖 h1(Beta)
+          fireDragEvent(ctx, sourceRow, 'mousedown');
+          fireDragEvent(ctx, sourceRow, 'dragstart');
+          const dropClasses = (row) => ['vditor-outline__item--drop-above', 'vditor-outline__item--drop-below']
+            .filter((c) => row.classList.contains(c));
+          const totalIndicated = () => outlineRows(ctx).filter((r) => dropClasses(r).length > 0).length;
+          // ① 悬停 row0 下半：插入边界在 row1 之前 → 线画在 row1 顶部
+          outlineRows(ctx)[0].getBoundingClientRect = () => ({ top: 0, left: 0, right: 100, bottom: 20, width: 100, height: 20 });
+          fireDragEvent(ctx, outlineRows(ctx)[0], 'dragover', { clientY: 15 });
+          assert.deepEqual(dropClasses(outlineRows(ctx)[1]), ['vditor-outline__item--drop-above'], 'below 落点的线应锚定下一行顶部');
+          assert.equal(dropClasses(outlineRows(ctx)[0]).length, 0, '悬停行自身不应有线');
+          assert.equal(totalIndicated(), 1, '同时只有一根线');
+          // ② 悬停 row1 上半：同一插入边界 → 同一行同一根线
+          outlineRows(ctx)[1].getBoundingClientRect = () => ({ top: 0, left: 0, right: 100, bottom: 0, width: 100, height: 0 });
+          fireDragEvent(ctx, outlineRows(ctx)[1], 'dragover', { clientY: 0 });
+          assert.deepEqual(dropClasses(outlineRows(ctx)[1]), ['vditor-outline__item--drop-above'], 'above 落点与 below 同边界应同位置');
+          assert.equal(totalIndicated(), 1);
+          // ③ 文档末尾插入：改拖 h2（拖最后一行 B 放其下方是原位等价无操作，无指示线），
+          //    悬停最后一行下半 → 线在最后一行底部
+          fireDragEvent(ctx, outlineRows(ctx)[1], 'dragstart');
+          outlineRows(ctx)[2].getBoundingClientRect = () => ({ top: 0, left: 0, right: 100, bottom: 20, width: 100, height: 20 });
+          fireDragEvent(ctx, outlineRows(ctx)[2], 'dragover', { clientY: 15 });
+          assert.deepEqual(dropClasses(outlineRows(ctx)[2]), ['vditor-outline__item--drop-below'], '文档末尾插入的线在最后一行底部');
+          assert.equal(totalIndicated(), 1);
+          // ④ 下一行处于折叠子树（ul display:none）：改回拖 B，线回退到悬停行底部
+          fireDragEvent(ctx, sourceRow, 'dragstart');
+          outlineRows(ctx)[1].closest('ul').style.display = 'none';
+          fireDragEvent(ctx, outlineRows(ctx)[0], 'dragover', { clientY: 15 });
+          assert.deepEqual(dropClasses(outlineRows(ctx)[0]), ['vditor-outline__item--drop-below'], '下一行不可见时线回退悬停行底部');
+          assert.equal(totalIndicated(), 1);
+          fireDragEvent(ctx, sourceRow, 'dragend');
+        } finally {
+          ctx.window.close();
+        }
+      });
     });
   });
 });
@@ -479,5 +519,9 @@ describe('outline style passthrough', { skip: !DIST_READY }, () => {
     assert.match(css, outlineCode, '大纲条目行内 code 应使用编辑器 code 字体变量');
     // less 嵌套下 s, del 编译为两条完整前缀选择器，断言 del 一侧即可
     assert.match(css, /\.vditor-outline[^{}]*li>span>span[^{}]*\bdel\s*\{[^}]*line-through/, '删除线样式');
+    // 指示线单线契约：每个落点类只激活一个伪元素（合并选择器会产生游离的第二根线）；
+    // 压缩器会把 ::before/::after 规范成单冒号，正则需兼容两种写法
+    assert.ok(!/--drop-above:{1,2}after/.test(css), 'drop-above 不应激活 ::after');
+    assert.ok(!/--drop-below:{1,2}before/.test(css), 'drop-below 不应激活 ::before');
   });
 });

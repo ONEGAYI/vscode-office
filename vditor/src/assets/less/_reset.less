@@ -721,7 +721,7 @@
       }
     }
 
-    // 大纲拖拽重排：源行半透明 + 上/下落点指示线
+    // 大纲拖拽重排：源行半透明 + 落点指示线（单线锚定插入边界，边界行映射见 dragReorder）
     li>span[data-target-id] {
       cursor: grab;
     }
@@ -733,18 +733,20 @@
     li>span.vditor-outline__item--drop-above,
     li>span.vditor-outline__item--drop-below {
       position: relative;
+    }
 
-      &::before,
-      &::after {
-        content: "";
-        position: absolute;
-        left: 2px;
-        right: 2px;
-        height: 2px;
-        border-radius: 1px;
-        background-color: var(--toolbar-icon-hover-color);
-        pointer-events: none;
-      }
+    // 每个落点类只允许激活一个伪元素；若把两条伪元素写进同一选择器组，
+    // 任一类都会同时生成 :before 与 :after，未定位的那个按静态位置渲染出游离的第二根线
+    li>span.vditor-outline__item--drop-above::before,
+    li>span.vditor-outline__item--drop-below::after {
+      content: "";
+      position: absolute;
+      left: 2px;
+      right: 2px;
+      height: 2px;
+      border-radius: 1px;
+      background-color: var(--toolbar-icon-hover-color);
+      pointer-events: none;
     }
 
     li>span.vditor-outline__item--drop-above::before {

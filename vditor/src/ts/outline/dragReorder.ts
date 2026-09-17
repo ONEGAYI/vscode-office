@@ -74,6 +74,18 @@ const findHeadingById = (editor: HTMLElement, id: string): HTMLElement | null =>
     return matched === undefined ? null : matched as HTMLElement;
 };
 
+/** 文档顺序的下一大纲行（行嵌套在 ul/li 树中，不能用 nextElementSibling） */
+const nextOutlineRow = (contentElement: HTMLElement, row: HTMLElement): HTMLElement | null => {
+    const rows = Array.from(contentElement.querySelectorAll<HTMLElement>(ITEM_SELECTOR));
+    const index = rows.indexOf(row);
+    return index === -1 || index + 1 >= rows.length ? null : rows[index + 1];
+};
+
+/** 行是否处于折叠子树内（outlineRender 折叠时对子树 ul 写 display:none） */
+const isRowHidden = (row: HTMLElement): boolean => {
+    return !!row.closest('ul[style*="display: none"], ul[style*="display:none"]');
+};
+
 /**
  * 将被拖标题的整个治理区域移动到目标标题边界，并按块拖拽（blockHandle）的
  * 成熟配方提交：DOM 移动 → renderTocNow → 记 undo → 触发序列化与保存。
@@ -245,8 +257,22 @@ export const bindOutlineDrag = (vditor: IVditor, contentElement: HTMLElement) =>
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
         clearIndicators();
-        state.indicatedRow = drop.row;
-        drop.row.classList.add(drop.position === "above" ? DROP_ABOVE_CLASS : DROP_BELOW_CLASS);
+        // 指示线锚定「插入边界」而非悬停行的半区：悬停某行下半与悬停下一行上半
+        // 渲染同一根线（画在下一行顶部）；文档末尾（无下一行）或下一行被折叠
+        // 隐藏时，回退到悬停行底部
+        if (drop.position === "above") {
+            state.indicatedRow = drop.row;
+            drop.row.classList.add(DROP_ABOVE_CLASS);
+        } else {
+            const nextRow = nextOutlineRow(contentElement, drop.row);
+            if (nextRow && !isRowHidden(nextRow)) {
+                state.indicatedRow = nextRow;
+                nextRow.classList.add(DROP_ABOVE_CLASS);
+            } else {
+                state.indicatedRow = drop.row;
+                drop.row.classList.add(DROP_BELOW_CLASS);
+            }
+        }
     });
 
     contentElement.addEventListener("dragleave", (event: DragEvent) => {
