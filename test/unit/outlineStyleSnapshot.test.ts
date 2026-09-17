@@ -5,7 +5,7 @@ import { buildOutlineStyleSnapshot } from '../../vditor/src/ts/outline/styleSnap
 /**
  * 大纲条目标式快照的纯逻辑契约（feat/outline-drag-reorder 功能 2）
  *
- * 偏差式透传：仅当标题计算值与编辑器根计算值不同（或偏离标题默认值）才注入；
+ * 偏差式透传：仅当标题计算值与编辑器根计算值不同才注入；
  * font-size 与 font-weight 一律排除（大纲保留自身层级字号体系；标题层级
  * 字重不进大纲，行内真实加粗由 strong/b 标签直通 + UA 默认样式呈现）。
  */
