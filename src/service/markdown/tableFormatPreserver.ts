@@ -26,7 +26,9 @@ type TextBlock = { kind: 'text'; lines: string[] };
  * 表格块：leadingBlanks / trailingBlanks 是紧邻表格上下方被吸收进来的空行
  * （含只含空白的行）。Lute 序列化会在表格前统一补足双空行（HTML 块隔离
  * 习惯）、把表格后 ≥2 空行压缩为 1，这部分空行与分隔行/空格 padding 同属
- * 表格格式噪音，一并随表格还原。
+ * 表格格式噪音，一并随表格还原。推论（by design）：用户仅增删表格邻接空行
+ * 而表格骨架未变时，空行会还原为磁盘旧形态（渲染等价，落盘后即稳态）——
+ * 报告"改空行不生效"属此语义而非 bug。
  */
 type TableBlock = { kind: 'table'; leadingBlanks: string[]; lines: string[]; trailingBlanks: string[] };
 type Block = TextBlock | TableBlock;
@@ -113,8 +115,9 @@ const splitBlocks = (text: string): Block[] => {
                 leadingBlanks.unshift(textBuf.pop()!);
             }
             // 吸收紧随其后的空行：Lute 会把表格后 ≥2 空行压缩为 1，对称还原
+            // （围栏行非空行，天然终止吸收）
             const trailingBlanks: string[] = [];
-            while (j < lines.length && lines[j].trim() === '' && !FENCE_OPEN.test(lines[j])) {
+            while (j < lines.length && lines[j].trim() === '') {
                 trailingBlanks.push(lines[j]);
                 j++;
             }
