@@ -13,6 +13,9 @@ export interface TextOffsetPosition {
     local: number;
 }
 
+/** 边界归属偏向：同一数值偏移在节点边界处落到前节点末尾还是后节点开头 */
+export type TextOffsetBias = "start" | "end";
+
 export const totalTextLength = (lengths: number[]): number => {
     return lengths.reduce((sum, len) => sum + len, 0);
 };
@@ -20,20 +23,26 @@ export const totalTextLength = (lengths: number[]): number => {
 /**
  * 把全局文本偏移解析为文本节点序号 + 局部偏移。
  *
- * 边界语义：offset 恰落在节点边界时归属前一个节点的末尾，与
- * Range.setStart(node, node.length) 的等价位置约定一致；零长文本节点
- * 不作为落点。offset clamp 到 [0, 总长]；不存在任何非零文本节点时
- * 返回 null（调用方需兜底）。
+ * 边界语义：offset 恰落在节点边界时按 bias 归属——'end'（默认）归前节点
+ * 末尾，与 Range.setEnd 的等价位置约定一致；'start' 归后节点开头，与
+ * Range.setStart 一致（选区 start 端点前归属会使恢复的选区漂移进前一块，
+ * 曾致列表幂等取消吸并相邻段落，见 fork issue #10）。总长末尾无后续
+ * 节点，start 偏向也归末节点末尾。零长文本节点不作为落点。
+ * offset clamp 到 [0, 总长]；不存在任何非零文本节点时返回 null
+ * （调用方需兜底）。
  */
-export const locateTextOffset = (lengths: number[], offset: number): TextOffsetPosition | null => {
-    let hasText = false;
-    for (const len of lengths) {
-        if (len > 0) {
-            hasText = true;
-            break;
+export const locateTextOffset = (
+    lengths: number[],
+    offset: number,
+    bias: TextOffsetBias = "end",
+): TextOffsetPosition | null => {
+    let last = -1;
+    for (let i = 0; i < lengths.length; i++) {
+        if (lengths[i] > 0) {
+            last = i;
         }
     }
-    if (!hasText) {
+    if (last === -1) {
         return null;
     }
 
@@ -46,11 +55,11 @@ export const locateTextOffset = (lengths: number[], offset: number): TextOffsetP
         if (len === 0) {
             continue;
         }
-        if (target <= prefix + len) {
+        if (target < prefix + len || (bias === "end" && target === prefix + len)) {
             return { index: i, local: target - prefix };
         }
         prefix += len;
     }
-    // clamp 后必在循环内命中，此处仅为类型完备
-    return null;
+    // start 偏向落在总长末尾：无后续节点可归属，落末节点末尾
+    return { index: last, local: lengths[last] };
 };

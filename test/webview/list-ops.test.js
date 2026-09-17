@@ -550,6 +550,146 @@ describe('list-ops: batch list in ir mode (I)', { skip: DIST_READY ? false : 'vd
   });
 });
 
+// ── G：幂等取消与边界端点归属（#10） ────────────────────────────────────
+// 两层根因的红测试：选区快照 start 端点边界前归属漂移（恢复后 start 落进
+// 前一块，二次触发被批量分支解析为跨块选区）+ batchToggleList 对端点恰在
+// 块边界的浏览器等价位置表达不收缩（零交集相邻块被卷入批量转换）
+
+describe('list-ops: idempotent cancel & boundary endpoints (G, #10)', { skip: DIST_READY ? false : 'vditor/dist 未构建：先在 vditor/ 目录执行构建' }, () => {
+  const MD_IDEM = 'pre\n\none\n\ntwo\n';
+
+  it('G1: wysiwyg 两段设列表后再次触发 → 幂等取消，前段不被吸并', async () => {
+    const t = await boot(MD_IDEM);
+    try {
+      const blocks = paras(t);
+      assert.equal(blocks.length, 3, '前置：pre + one + two 三段');
+      selectFromTo(t, blocks[1], blocks[2]);
+      clickToolbar(t, 'list');
+      await settle();
+
+      let ul = resetEl(t).querySelector('ul');
+      assert.ok(ul, '第一次触发应生成列表');
+      assert.equal(ul.querySelectorAll(':scope > li').length, 2);
+
+      // 第二次触发：选区经第一次操作的快照恢复，start 端点不得漂移进 pre
+      clickToolbar(t, 'list');
+      await settle();
+
+      const reset = resetEl(t);
+      assert.equal(reset.querySelectorAll('ul').length, 0, '应幂等取消回段落');
+      const ps = Array.from(reset.querySelectorAll('p[data-block="0"]'))
+        .map((p) => p.textContent.trim());
+      assert.deepEqual(ps, ['pre', 'one', 'two'], 'pre 保持段落，不被吸并');
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('G2: 有序列表同场景幂等取消（ordered-list 按钮路径）', async () => {
+    const t = await boot(MD_IDEM);
+    try {
+      const blocks = paras(t);
+      selectFromTo(t, blocks[1], blocks[2]);
+      clickToolbar(t, 'ordered-list');
+      await settle();
+      assert.ok(resetEl(t).querySelector('ol'), '第一次触发应生成有序列表');
+
+      clickToolbar(t, 'ordered-list');
+      await settle();
+
+      const reset = resetEl(t);
+      assert.equal(reset.querySelectorAll('ol').length, 0, '应幂等取消回段落');
+      const ps = Array.from(reset.querySelectorAll('p[data-block="0"]'))
+        .map((p) => p.textContent.trim());
+      assert.deepEqual(ps, ['pre', 'one', 'two']);
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('G3: start 端点表达在前块末尾（浏览器等价位置）→ 前块不被卷入', async () => {
+    const t = await boot(MD_IDEM);
+    try {
+      const [pre, one, two] = paras(t);
+      const { window, document } = t;
+      const sel = window.getSelection();
+      const range = document.createRange();
+      // 与 setStart(one 文本, 0) 视觉等价：前块文本末尾
+      range.setStart(deepestFirstChild(pre), pre.textContent.length);
+      range.setEnd(deepestFirstChild(two), two.textContent.length);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.dispatchEvent(new window.Event('selectionchange'));
+
+      clickToolbar(t, 'list');
+      await settle();
+
+      const reset = resetEl(t);
+      const ps = Array.from(reset.querySelectorAll('p[data-block="0"]'))
+        .map((p) => p.textContent.trim());
+      assert.deepEqual(ps, ['pre'], 'pre 与选区零交集，保持段落');
+      const ul = reset.querySelector('ul');
+      assert.ok(ul, 'one/two 应转列表');
+      assert.equal(ul.querySelectorAll(':scope > li').length, 2);
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('G4: end 端点表达在后块绝对起点 → 按"选入该块"处理（语义记录）', async () => {
+    // 端点 ≡ 后块绝对起点（(block,0) 的等价位置：首文本@0 / 首子元素@0）
+    // 有两种等价 Range 表达。既有批量契约（T6 等）的选区辅助会把 end 深入
+    // 到目标块首子元素 @0，两种表达在 DOM 位置上不可区分——统一按"选入"
+    // 处理，不做对称回退（#10 只修 start 侧漂移：end 前归属本就是正确语义，
+    // 恢复的选区不会向后漂）。此用例固化该决策：end 在 post 开头 → post
+    // 被卷入批量转换，与 T6 行为一致
+    const t = await boot('one\n\ntwo\n\npost\n');
+    try {
+      const [one, two, post] = paras(t);
+      const { window, document } = t;
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.setStart(deepestFirstChild(one), 0);
+      range.setEnd(deepestFirstChild(post), 0);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.dispatchEvent(new window.Event('selectionchange'));
+
+      clickToolbar(t, 'list');
+      await settle();
+
+      const reset = resetEl(t);
+      const ul = reset.querySelector('ul');
+      assert.ok(ul, '应生成列表（三块全部卷入）');
+      assert.equal(ul.querySelectorAll(':scope > li').length, 3);
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('G5: ir 模式两段设列表后再次触发 → 幂等取消，前段不被吸并', async () => {
+    const t = await boot(MD_IDEM, { mode: 'ir' });
+    try {
+      const blocks = paras(t);
+      selectFromTo(t, blocks[1], blocks[2]);
+      clickToolbar(t, 'list');
+      await settle();
+      assert.ok(resetEl(t).querySelector('ul'), 'ir 第一次触发应生成列表');
+
+      clickToolbar(t, 'list');
+      await settle();
+
+      const reset = resetEl(t);
+      assert.equal(reset.querySelectorAll('ul').length, 0, 'ir 应幂等取消回段落');
+      const ps = Array.from(reset.querySelectorAll('p[data-block="0"]'))
+        .map((p) => p.textContent.trim());
+      assert.deepEqual(ps, ['pre', 'one', 'two'], 'ir 前段不被吸并');
+    } finally {
+      t.window.close();
+    }
+  });
+});
+
 // ── N/H/Q/R：审查补强（嵌套子列表 / heading / 单列表回退 / 引用隔断） ────
 
 describe('list-ops: review hardening (N/H/Q/R)', { skip: DIST_READY ? false : 'vditor/dist 未构建：先在 vditor/ 目录执行构建' }, () => {

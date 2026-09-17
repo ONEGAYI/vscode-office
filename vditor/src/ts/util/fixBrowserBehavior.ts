@@ -381,13 +381,32 @@ const unwrapListBlock = (block: HTMLElement) => {
 const batchToggleList = (vditor: IVditor, range: Range, type: string): boolean => {
     const startBlock = hasClosestByAttribute(range.startContainer, "data-block", "0") as HTMLElement;
     const endBlock = hasClosestByAttribute(range.endContainer, "data-block", "0") as HTMLElement;
-    if (!startBlock || !endBlock || startBlock === endBlock) {
+    if (!startBlock || !endBlock) {
         return false;
     }
     const blocks = Array.from(vditor[vditor.currentMode].element.children);
-    const startIndex = blocks.indexOf(startBlock);
-    const endIndex = blocks.indexOf(endBlock);
+    let startIndex = blocks.indexOf(startBlock);
+    let endIndex = blocks.indexOf(endBlock);
     if (startIndex === -1 || endIndex === -1) {
+        return false;
+    }
+    // start 端点恰落在块边界（与所在块零交集，strip ZWSP 后无内容——块尾
+    // 边界哨兵的 ZWSP 不算内容）且表达为前块末尾时，推进到下一块：浏览器对
+    // 同一视觉位置有多种等价 Range 表达，不推进会使零交集的前一块被卷入
+    // 批量转换（fork issue #10）。end 侧不做对称回退：端点 ≡ 后块绝对起点
+    // 时按"选入该块"处理，与既有批量契约一致（跨块选区的测试辅助会把
+    // end 深入到目标块首子元素 @0）
+    if (startIndex !== endIndex) {
+        const probe = startBlock.ownerDocument.createRange();
+        probe.selectNodeContents(startBlock);
+        probe.setStart(range.startContainer, range.startOffset);
+        if (probe.toString().replace(new RegExp(Constants.ZWSP, "g"), "").length === 0 && startIndex + 1 <= endIndex) {
+            startIndex += 1;
+        }
+    }
+    // 单块选区（含收缩后等价单块）交单块路径处理；批量分支的转换模板与
+    // 单块路径不同（check 空格记账等），误入会使选区恢复校验失败而塌缩
+    if (startIndex === endIndex) {
         return false;
     }
     const selected = blocks.slice(Math.min(startIndex, endIndex), Math.max(startIndex, endIndex) + 1);

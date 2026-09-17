@@ -169,8 +169,8 @@ const collectEditorTextNodes = (editor: HTMLElement): Text[] => {
 export const setRangeByEditorTextOffset = (editor: HTMLElement, start: number, end: number): Range | null => {
     const textNodes = collectEditorTextNodes(editor);
     const lengths = textNodes.map((node) => stripZwspLength(node.textContent || ""));
-    const startAt = locateTextOffset(lengths, start);
-    const endAt = locateTextOffset(lengths, end);
+    const startAt = locateTextOffset(lengths, start, "start");
+    const endAt = locateTextOffset(lengths, end, "end");
     if (!startAt || !endAt) {
         return null;
     }
