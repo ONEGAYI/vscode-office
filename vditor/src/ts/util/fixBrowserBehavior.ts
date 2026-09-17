@@ -407,12 +407,14 @@ const batchToggleList = (vditor: IVditor, range: Range, type: string): boolean =
                 // 同步推进 range 起点：零交集的前块只是等价位置表达，选区
                 // 的真实归属是下一块——推进后塌缩为单块返回 false 时，调用
                 // 方单块路径的 blockElement/itemElement 解析（锚定
-                // startContainer）才能命中用户实际选中的块
-                let node: Node = blocks[startIndex];
-                while (node.nodeType === 1 && node.firstChild) {
-                    node = node.firstChild;
-                }
-                range.setStart(node.nodeType === 3 ? node : blocks[startIndex], 0);
+                // startContainer）才能命中用户实际选中的块。目标取块内文档
+                // 序首个文本节点：首子为 input/br 等无子元素时 firstChild
+                // 链会提前停在它们上面，锚点落到块元素自身会使 itemElement
+                // 解析为 null、把整个既有列表错误包裹成嵌套结构
+                const walker = startBlock.ownerDocument.createTreeWalker(
+                    blocks[startIndex] as Node, 4 /* NodeFilter.SHOW_TEXT */);
+                const firstText = walker.nextNode();
+                range.setStart(firstText || blocks[startIndex], 0);
             }
         } catch {
             // 陈旧 range 的 offset 可能越界（IndexSizeError），按非零交集

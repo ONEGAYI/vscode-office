@@ -79,6 +79,12 @@ describe("locateTextOffset start 偏向（#10：选区 start 端点防前漂移�
         assert.equal(locateTextOffset([], 0, "start"), null);
         assert.equal(locateTextOffset([0, 0], 0, "start"), null);
     });
+
+    it("NaN 偏移 → null（旧契约：交调用方兜底，不静默归末节点末尾）", () => {
+        assert.equal(locateTextOffset([3, 5], Number.NaN), null);
+        assert.equal(locateTextOffset([3, 5], Number.NaN, "start"), null);
+        assert.equal(locateTextOffset([3, 5], Number.NaN, "end"), null);
+    });
 });
 
 describe("totalTextLength", () => {
