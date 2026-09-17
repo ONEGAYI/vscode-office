@@ -29,6 +29,19 @@ Office Viewer includes a full Git History workspace for exploring repositories w
 
 This extension replaces the default Markdown editor with a WYSIWYG editor.
 
+To compare source text, select two `.md` or `.markdown` files in Explorer,
+right-click, and choose **Compare Selected Markdown as Text**. The comparison
+opens directly in VS Code's text diff without changing the normal Markdown
+editor association. The selection order determines the left and right sides.
+
+In a Markdown comparison, the pencil button switches between the text diff
+and the normally associated Markdown editors where VS Code supports custom
+editor comparisons. Newer VS Code versions may keep using a text diff.
+Unsaved edits stay in the real document; a dirty source tab can remain open
+until saved. If an older custom comparison does not expose its file pair and
+the file names are ambiguous, use the Explorer command to select the pair
+explicitly.
+
 To use the built-in VS Code Markdown editor instead, add this to your `settings.json`:
 
 ```json

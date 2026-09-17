@@ -1,4 +1,5 @@
 {
+	"markdown.compareSelected": "以純文字比較所選 Markdown 檔案",
 	"ext.common.yes": "是",
 	"ext.common.no": "否",
 	"ext.compress.startExtract": "開始解壓...",

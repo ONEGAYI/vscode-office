@@ -1,4 +1,5 @@
 {
+	"markdown.compareSelected": "Compare Selected Markdown as Text",
 	"ext.common.yes": "YES",
 	"ext.common.no": "NO",
 	"ext.compress.startExtract": "Start extracting...",
