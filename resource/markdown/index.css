@@ -255,11 +255,14 @@ body.is-web .vditor-context-menu__item--desktop-only:focus-visible {
    the ::before into the ol/ul padding gutter, mirroring how vditor
    positions its task checkbox (-1.6em). */
 .vditor-wysiwyg ol[data-block],
-.vditor-wysiwyg ul[data-block] {
+.vditor-wysiwyg ul[data-block],
+.vditor-ir ol[data-block],
+.vditor-ir ul[data-block] {
     list-style: none;
 }
 
-.vditor-wysiwyg [data-block] > li[data-marker]:not(.vditor-task)::before {
+.vditor-wysiwyg [data-block] > li[data-marker]:not(.vditor-task)::before,
+.vditor-ir [data-block] > li[data-marker]:not(.vditor-task)::before {
     content: attr(data-marker) ' ';
     display: inline-block;
     min-width: 1.5em;
@@ -271,11 +274,13 @@ body.is-web .vditor-context-menu__item--desktop-only:focus-visible {
 /* Caret's line: the real span takes over from the CSS marker. The
    !important is required — plain specificity cannot beat the
    [data-block] attribute selector above. */
-.vditor-wysiwyg li.vmd-marker-live::before {
+.vditor-wysiwyg li.vmd-marker-live::before,
+.vditor-ir li.vmd-marker-live::before {
     content: none !important;
 }
 
-.vditor-wysiwyg .vmd-li-marker {
+.vditor-wysiwyg .vmd-li-marker,
+.vditor-ir .vmd-li-marker {
     display: inline-block;
     min-width: 1.5em;
     margin-left: -1.8em;
@@ -288,7 +293,8 @@ body.is-web .vditor-context-menu__item--desktop-only:focus-visible {
 /* Marker color follows the fork's --list-marker-color (same variable the
    native ::marker rendering used, defined on .vditor-reset), with a VS Code
    theme fallback for contexts where the variable is not in scope. */
-.vditor-wysiwyg [data-block] > li[data-marker]:not(.vditor-task)::before {
+.vditor-wysiwyg [data-block] > li[data-marker]:not(.vditor-task)::before,
+.vditor-ir [data-block] > li[data-marker]:not(.vditor-task)::before {
     color: var(--list-marker-color, var(--vscode-descriptionForeground, rgba(127, 127, 127, 0.6)));
 }
 
