@@ -92,6 +92,26 @@ export const readmeMarkdownContent = (): string => `# 自定义 CSS 片段（cus
 
 **滚动条**：\`--scrollbar-thumb\` | \`--scrollbar-thumb-hover\`
 
+## 元素级定制（选择器示例）
+
+变量覆盖的是全局值；标题这类**没有专用变量**的元素（颜色继承正文、
+字体字号跟随内容区）用选择器改，内容区根选择器为 \`.vditor-reset\`
+（wysiwyg / ir / 预览三模式共用）：
+
+\`\`\`css
+/* 标题统一换颜色 / 字体 */
+.vditor-reset h1, .vditor-reset h2, .vditor-reset h3,
+.vditor-reset h4, .vditor-reset h5, .vditor-reset h6 {
+  color: var(--chart-blue);
+  font-family: "Microsoft YaHei", sans-serif;
+}
+/* 只调某一级字号：默认 h1 1.75em / h2 1.55em / h3 1.38em / h4 1.25em */
+.vditor-reset h2 { font-size: 1.3em; }
+\`\`\`
+
+注意：\`--ir-heading-color\` 只染 IR 模式的 \`#\` 标记，不作用于标题文本；
+标题 Hx 左侧的 H1/H2 徽标是 \`::before\` 生成，一般不要覆盖。
+
 ## 边界
 
 这里的样式属于"编辑器环境"，不会内联进导出的 HTML/PDF 产物
