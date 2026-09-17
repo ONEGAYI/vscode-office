@@ -7,6 +7,11 @@
  * （Lute 规范化格式）。
  *
  * 拒绝语义：任何解析/对位拿不准的场景一律采用新内容——宁可格式化，绝不丢内容。
+ * 已知限制（安全方向，均退化为"接受 Lute 格式化"，一次性落盘后稳态）：
+ * blockquote / list 容器内的表格不参与保鲜（不识别 `> ` / `- ` 前缀行）；
+ * 含 `\|` 转义管道的表格——Lute 序列化会去掉转义前的空格（`a \| b` →
+ * `a\| b`），属内容级微损而非格式差异，判为已编辑；文档尾部换行若不紧随
+ * 表格，以新内容为准（紧随表格时随表格还原）。
  *
  * 背景：Lute 的 VditorIRDOM2Md / VditorDOM2Md 按列显示宽重新生成分隔行与
  * padding（ir 稳态 = 最大显示宽 + 2，wysiwyg 稳态 = 最大显示宽，两模式互不
@@ -18,11 +23,12 @@
 
 type TextBlock = { kind: 'text'; lines: string[] };
 /**
- * 表格块：leadingBlanks 是紧邻表格上方被吸收进来的空行（含只含空白的行）。
- * Lute 序列化会在表格前统一补足双空行（HTML 块隔离习惯），这部分空行与
- * 分隔行/空格 padding 同属表格格式噪音，一并随表格还原。
+ * 表格块：leadingBlanks / trailingBlanks 是紧邻表格上下方被吸收进来的空行
+ * （含只含空白的行）。Lute 序列化会在表格前统一补足双空行（HTML 块隔离
+ * 习惯）、把表格后 ≥2 空行压缩为 1，这部分空行与分隔行/空格 padding 同属
+ * 表格格式噪音，一并随表格还原。
  */
-type TableBlock = { kind: 'table'; leadingBlanks: string[]; lines: string[] };
+type TableBlock = { kind: 'table'; leadingBlanks: string[]; lines: string[]; trailingBlanks: string[] };
 type Block = TextBlock | TableBlock;
 
 type TableAlign = 'none' | 'left' | 'center' | 'right';
@@ -106,8 +112,14 @@ const splitBlocks = (text: string): Block[] => {
             while (textBuf.length > 0 && textBuf[textBuf.length - 1].trim() === '') {
                 leadingBlanks.unshift(textBuf.pop()!);
             }
+            // 吸收紧随其后的空行：Lute 会把表格后 ≥2 空行压缩为 1，对称还原
+            const trailingBlanks: string[] = [];
+            while (j < lines.length && lines[j].trim() === '' && !FENCE_OPEN.test(lines[j])) {
+                trailingBlanks.push(lines[j]);
+                j++;
+            }
             flushText();
-            blocks.push({ kind: 'table', leadingBlanks, lines: tableLines });
+            blocks.push({ kind: 'table', leadingBlanks, lines: tableLines, trailingBlanks });
             i = j;
             continue;
         }
@@ -181,10 +193,10 @@ const blocksMatch = (a: Block, b: Block): boolean => {
     return sameSkeleton(a.lines, (b as TableBlock).lines);
 };
 
-/** 块的输出行（表格块含前导空行） */
+/** 块的输出行（表格块含前后空行） */
 const blockLines = (block: Block): string[] =>
     block.kind === 'table'
-        ? [...block.leadingBlanks, ...block.lines]
+        ? [...block.leadingBlanks, ...block.lines, ...block.trailingBlanks]
         : block.lines;
 
 /**
@@ -244,7 +256,10 @@ export const preserveTableFormat = (oldText: string, newText: string): string =>
         }
 
         return out.join('\n');
-    } catch {
+    } catch (error) {
+        // 保鲜失效回退到 Lute 输出（= 修复前行为，方向安全），但要留排障信号：
+        // timer/dispose 路径的 flush 是 void 直调，异常不会经 handler 包装上报
+        console.warn('preserveTableFormat failed, falling back to raw content:', error);
         return newLf;
     }
 };

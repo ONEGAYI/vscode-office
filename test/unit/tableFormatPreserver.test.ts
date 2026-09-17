@@ -70,6 +70,26 @@ describe('preserveTableFormat — 核心契约：未动表格字节级还原', (
         assert.equal(preserveTableFormat(old, cosmeticOnly), old);
     });
 
+    it('表格前的空行数量随表格还原（Lute 会补足双空行）', () => {
+        const old = '段落\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n尾段';
+        // 真实 Lute 形态：表格前被补成双空行，横线与 padding 重排
+        const luteForm = '段落\n\n\n| a | b |\n| ----- | --- |\n| 1     | 2 |\n\n尾段';
+        assert.equal(preserveTableFormat(old, luteForm), old);
+    });
+
+    it('表格后的空行数量随表格还原（Lute 会把 ≥2 空行压缩为 1）', () => {
+        const old = '| a | b |\n| --- | --- |\n| 1 | 2 |\n\n\n尾段';
+        const luteForm = '| a | b |\n| ----- | --- |\n| 1     | 2 |\n\n尾段';
+        assert.equal(preserveTableFormat(old, luteForm), old);
+    });
+
+    it('文档尾部换行紧随表格时随表格还原', () => {
+        const old = '| a | b |\n| --- | --- |\n| 1 | 2 |';
+        const luteForm = '| a | b |\n| ----- | --- |\n| 1     | 2 |\n';
+        // 表格是最后一块：尾换行并入 trailing 空行随表格还原，字节级 == old
+        assert.equal(preserveTableFormat(old, luteForm), old);
+    });
+
     it('相同输入为恒等变换', () => {
         assert.equal(preserveTableFormat(OLD_DOC, OLD_DOC), OLD_DOC);
     });
@@ -192,10 +212,12 @@ describe('preserveTableFormat — 表格识别边界', () => {
         assert.equal(out, rewritten);
     });
 
-    it('转义管道 \\| 不切列：骨架等价则还原', () => {
+    it('含 \\| 转义管道的表格：Lute 去转义前空格属内容级微损，判已编辑取新', () => {
+        // 真实 Lute 序列化形态：`a \| b` → `a\| b`（渲染文本少一个空格）。
+        // 空格按内容处理（宁可格式化绝不丢内容），一次性落盘后二阶稳态
         const old = '| a \\| b | c |\n| --- | --- |\n| 1 | 2 |';
-        const rewritten = '| a \\| b | c |\n| ----- | --- |\n| 1     | 2 |';
-        assert.equal(preserveTableFormat(old, rewritten), old);
+        const luteForm = '| a\\| b | c |\n| ----- | --- |\n| 1     | 2 |';
+        assert.equal(preserveTableFormat(old, luteForm), luteForm);
     });
 
     it('无分隔行的孤行管道文本不是表格（不抛异常、按文本处理）', () => {
@@ -215,6 +237,38 @@ describe('preserveTableFormat — 表格识别边界', () => {
         assert.equal(preserveTableFormat('', ''), '');
         assert.equal(preserveTableFormat('', '| a |\n| - |\n| 1 |'), '| a |\n| - |\n| 1 |');
         assert.equal(preserveTableFormat('| a |\n| - |\n| 1 |', ''), '');
+    });
+
+    it('两个骨架相同的表格：编辑其一时另一个仍正确还原', () => {
+        const twin = '| a | b |\n| --- | --- |\n| 1 | 2 |';
+        const old = `前\n\n${twin}\n\n中\n\n${twin}\n\n后`;
+        const editedSecond = old.replace('中\n\n| a | b |\n| --- | --- |\n| 1 | 2 |',
+            '中\n\n| a | b |\n| - | - |\n| 1 | 9 |');
+        const out = preserveTableFormat(old, editedSecond);
+        // 第一个表格（未动）保持旧格式；第二个（编辑）取新格式
+        assert.ok(out.startsWith('前\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n中'));
+        assert.ok(out.includes('中\n\n| a | b |\n| - | - |\n| 1 | 9 |\n\n后'));
+    });
+
+    it('文档开头的表格（无前导块）可还原', () => {
+        const old = '| a | b |\n| --- | --- |\n| 1 | 2 |\n\n正文';
+        const rewritten = '| a | b |\n| ----- | --- |\n| 1     | 2 |\n\n正文';
+        assert.equal(preserveTableFormat(old, rewritten), old);
+    });
+
+    it('单列表格与开放式（无尾管道）写法可还原', () => {
+        const old = '| a |\n| --- |\n| 1 |';
+        const rewritten = '| a |\n| ----- |\n| 1     |';
+        assert.equal(preserveTableFormat(old, rewritten), old);
+        const open = '| a | b\n| --- | ---\n| 1 | 2';
+        const openRewritten = '| a | b\n| ----- | ---\n| 1     | 2';
+        assert.equal(preserveTableFormat(open, openRewritten), open);
+    });
+
+    it('分隔行带尾随空格不影响识别', () => {
+        const old = '| a | b |  \n| --- | --- |  \n| 1 | 2 |';
+        const rewritten = '| a | b |\n| ----- | --- |\n| 1     | 2 |';
+        assert.equal(preserveTableFormat(old, rewritten), old);
     });
 
     it('表格前后允许 ≤3 空格缩进（GFM 规则）', () => {
