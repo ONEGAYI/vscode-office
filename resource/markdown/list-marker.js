@@ -133,8 +133,22 @@
     var span = document.createElement('span');
     span.className = SPAN_CLASS;
     span.textContent = marker + '\u00A0';
+    // A caret parked at (li, 0) — the only native landing point of an item
+    // with no content node — would end up BEFORE the injected span (the
+    // marker), visually jumping to the marker's first character. Nudge it
+    // past the span (the content start) instead.
+    var sel = document.getSelection();
+    var caretAtLiStart = sel && sel.rangeCount > 0
+      && sel.anchorNode === li && sel.anchorOffset === 0;
     li.insertBefore(span, li.firstChild);
     li.classList.add(LI_LIVE_CLASS);
+    if (caretAtLiStart) {
+      var range = document.createRange();
+      range.setStart(li, 1);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
   }
 
   /**
