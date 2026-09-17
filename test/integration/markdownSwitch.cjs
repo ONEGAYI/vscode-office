@@ -35,6 +35,22 @@ exports.run = async () => {
         assert.ok(extension, 'must run in this extension test host');
         await extension.activate();
 
+        // Explorer supplies the focused URI followed by the selected URIs.
+        // Every tab opened by this command must be native from the outset.
+        const opened = [];
+        const listener = vscode.window.tabGroups.onDidChangeTabs(event => opened.push(...event.opened));
+        try {
+            await vscode.commands.executeCommand('office.markdown.compareSelected', original, [original, modified]);
+            await until(() => tab()?.input instanceof vscode.TabInputTextDiff, 'direct native comparison');
+            assert.equal(tab().input.original.toString(), original.toString());
+            assert.equal(tab().input.modified.toString(), modified.toString());
+            assert.ok(opened.length > 0);
+            assert.ok(opened.every(t => t.input instanceof vscode.TabInputTextDiff), 'first view must be plain text');
+            results.push({ scenario: 'Explorer comparison opens directly as text', passed: true });
+        } finally {
+            listener.dispose();
+        }
+
         for (const scenario of [
             { name: 'left focus', side: 'First', uri: original },
             { name: 'right focus', side: 'Second', uri: modified },
@@ -102,6 +118,25 @@ exports.run = async () => {
         await vscode.commands.executeCommand('office.markdown.switch', modified);
         await until(() => tab()?.input instanceof vscode.TabInputCustom, 'single text to custom');
         results.push({ scenario: 'single-file switching both directions', passed: true });
+
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        await vscode.commands.executeCommand('vscode.diff', original, modified, undefined,
+            { preview: false, override: true, viewColumn: vscode.ViewColumn.Two });
+        const comparisonGroup = vscode.window.tabGroups.activeTabGroup;
+        await Promise.all([
+            vscode.commands.executeCommand('office.markdown.switch', modified),
+            vscode.commands.executeCommand('office.markdown.switch', modified),
+        ]);
+        assert.equal(vscode.window.tabGroups.activeTabGroup.viewColumn, comparisonGroup.viewColumn);
+        assert.ok(snapshot().length <= 2, 'concurrent switches must not grow comparison tabs');
+        if (!(tab()?.input instanceof vscode.TabInputTextDiff)) {
+            await vscode.commands.executeCommand('office.markdown.switch', modified);
+        }
+        await until(() => tab()?.input instanceof vscode.TabInputTextDiff, 'second group returns to text');
+        assert.equal(tab().input.original.toString(), original.toString());
+        assert.equal(tab().input.modified.toString(), modified.toString());
+        assert.equal(snapshot().length, 1, 'clean concurrent switches leave one comparison');
+        results.push({ scenario: 'concurrent switching in a second editor group', passed: true });
     } catch (error) {
         results.push({ error: error.stack, actual: error.actual, expected: error.expected, tabs: snapshot(), documents: vscode.workspace.textDocuments.map(d => d.uri.toString()) });
         throw error;

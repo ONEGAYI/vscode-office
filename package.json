@@ -201,6 +201,10 @@
 		],
 		"commands": [
 			{
+				"command": "office.markdown.compareSelected",
+				"title": "%markdown.compareSelected%"
+			},
+			{
 				"command": "vscode-office.save-response-body",
 				"title": "Save Response",
 				"icon": "$(save)",
@@ -276,6 +280,12 @@
 			}
 		],
 		"menus": {
+			"commandPalette": [
+				{
+					"command": "office.markdown.compareSelected",
+					"when": "false"
+				}
+			],
 			"scm/title": [
 				{
 					"command": "office.gitHistory.view",
@@ -309,7 +319,7 @@
 				},
 				{
 					"command": "office.markdown.switch",
-					"when": "resourceExtname == '.md'",
+					"when": "resourceExtname =~ /\\.(md|markdown)$/i",
 					"group": "navigation@-2"
 				},
 				{
@@ -351,6 +361,11 @@
 				}
 			],
 			"explorer/context": [
+				{
+					"command": "office.markdown.compareSelected",
+					"group": "3_compare@20",
+					"when": "listDoubleSelection && !explorerResourceIsFolder && resourceExtname =~ /\\.(md|markdown)$/i"
+				},
 				{
 					"command": "office.gitHistory.viewFileHistory",
 					"group": "git",

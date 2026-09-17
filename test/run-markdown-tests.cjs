@@ -17,6 +17,8 @@ try {
         return outfile;
     });
     const result = spawnSync(process.execPath, ['--test', ...tests,
+        resolve(__dirname, 'unit/markdownTextDiff.test.cjs'),
+        resolve(__dirname, 'unit/markdownMenu.test.cjs'),
         resolve(__dirname, 'unit/markdownSwitchCompatibility.test.cjs')], { stdio: 'inherit' });
     if (result.error) throw result.error;
     process.exitCode = result.status ?? 1;

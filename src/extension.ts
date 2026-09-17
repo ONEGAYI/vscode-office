@@ -17,6 +17,7 @@ import { activateXml } from './provider/xml';
 import { activateGitHistory } from './gitHistory/provider';
 import { IconService } from './service/icon/iconService';
 import { autoClearCacheStorage } from './service/autoClearCacheStorage';
+import { compareSelectedMarkdown } from './service/markdown/markdownTextDiff';
 
 export async function activate(context: vscode.ExtensionContext) {
 	await Global.init(context);
@@ -36,6 +37,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	const classViewerInstance = new ClassViewerProvider(context);
 	const markdownEditorProvider = new MarkdownEditorProvider(context)
 	context.subscriptions.push(
+		vscode.commands.registerCommand('office.markdown.compareSelected', compareSelectedMarkdown),
 		vscode.commands.registerCommand('office.markdown.switch', (uri) => markdownService.switchEditor(uri)),
 		vscode.commands.registerCommand('office.csv.switch', (uri) => { switchCsvEditor(uri) }),
 		vscode.commands.registerCommand('office.markdown.paste', () => { markdownService.loadClipboardImage() }),
