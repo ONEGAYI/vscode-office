@@ -2,14 +2,23 @@ import { getToolbar, bindShortcut, createContextMenu, setAIAvailable, } from "./
 import { observeWorkspaceAbsoluteImages, createMarkdownValueReader, restoreWorkspaceBaseUrls, } from "./imagePath.js";
 import { mapVscodeLanguageToVditorLang } from "./lang.js";
 
+// 叠加层热更新：不依赖编辑器实例，注册在顶层，避免 vditor 初始化
+// 期间（open 应用之后、after() 之前）到达的广播被静默丢弃
+handler.on('customCss', (payload) => {
+  window.CustomCss?.applyCustomCss(payload?.cssText);
+});
+
 handler.on("open", async (md) => {
-  const { content, rootPath, workspaceBaseUrl, documentCacheId, pendingFragment, shouldRestoreFocus, config, fileName } = md;
+  const { content, rootPath, workspaceBaseUrl, documentCacheId, pendingFragment, shouldRestoreFocus, config, fileName, customCss } = md;
   window.__officeMarkdownFileName = fileName || 'Note';
   const {
     language, isWeb, isDev, markdown,
     editMode, editorTheme, codeMirrorTheme, mermaidTheme,
     markdownBlockLineNumbers, markdownHeadingBadges,
   } = config;
+  // 外部 CSS 叠加层首帧生效：与热更新（customCss 广播）同一条路径；
+  // 可选链兜底 custom-css.js 加载失败的极端场景，不让样式层拖垮编辑器
+  window.CustomCss?.applyCustomCss(customCss);
   if (isWeb) {
     document.body.classList.add('is-web')
   }
