@@ -1,11 +1,32 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import {
     collectSnippetCssText,
-    readmeCssContent,
+    readmeMarkdownContent,
     resolveSnippetDirPath,
     stripBom,
 } from '../../src/service/markdown/customCssSnippets.ts';
+
+/** 提取 vditor 源码里 EXPORT_CSS_VARS 白名单（动变量必碰的活清单）。 */
+const readExportVars = (): Set<string> => {
+    const source = readFileSync(
+        join('vditor', 'src', 'ts', 'util', 'exportThemeSettings.ts'), 'utf8');
+    const arrayBody = source.split('const EXPORT_CSS_VARS = [')[1]?.split(']')[0] ?? '';
+    return new Set([...arrayBody.matchAll(/"(--[a-z0-9-]+)"/g)].map((m) => m[1]));
+};
+
+/** 提取主题基线 Auto.css 定义的自有变量（--vscode-* 是引用不算定义）。 */
+const readThemeVars = (): Set<string> => {
+    const css = readFileSync(join('vditor', 'src', 'css', 'editor-theme', 'Auto.css'), 'utf8');
+    return new Set([...css.matchAll(/(--[a-z0-9-]+)(?=\s*:)/g)]
+        .map((m) => m[1])
+        .filter((name) => !name.startsWith('--vscode')));
+};
+
+const readmeVars = (): Set<string> =>
+    new Set([...readmeMarkdownContent().matchAll(/(--[a-z0-9-]+)/g)].map((m) => m[1]));
 
 describe('stripBom', () => {
     it('strips a leading UTF-8 BOM', () => {
@@ -17,22 +38,36 @@ describe('stripBom', () => {
     });
 });
 
-describe('readmeCssContent', () => {
-    it('is pure comments (no active rules ever load from the scaffold)', () => {
-        const content = readmeCssContent();
-        const withoutComments = content.replace(/\/\*[\s\S]*?\*\//g, '');
-        assert.equal(withoutComments.trim(), '');
+describe('readmeMarkdownContent', () => {
+    it('warns the file is extension-managed (detect-then-write will clobber edits)', () => {
+        const content = readmeMarkdownContent();
+        assert.ok(content.includes('请勿编辑'), '缺"请勿编辑"警示');
+        assert.ok(content.includes('会被覆盖'), '缺"会被覆盖"说明');
     });
 
     it('carries the variable catalog inline (readers never need repo sources)', () => {
-        const content = readmeCssContent();
+        const content = readmeMarkdownContent();
         // 常用变量就地可查：不指路仓库源码（vsix 用户没有源码可翻）
         assert.ok(!content.includes('vditor/src/'), 'README 不指路仓库源码路径');
-        for (const variable of ['--bg-color', '--front-color', '--link-color', '--code-bg-color',
-            '--cm-bg-color', '--ir-heading-color', '--chart-red', '--editor-font-size',
-            '--vditor-page-width', '--scrollbar-thumb']) {
-            assert.ok(content.includes(variable), `README 缺变量 ${variable}`);
-        }
+    });
+
+    it('variable catalog reconciles with the living sources (no drift)', () => {
+        const exported = readExportVars();
+        const themeVars = readThemeVars();
+        const readme = readmeVars();
+        assert.ok(exported.size >= 40, `EXPORT_CSS_VARS 提取异常（${exported.size} 项）`);
+        assert.ok(themeVars.size >= 50, `Auto.css 变量提取异常（${themeVars.size} 项）`);
+
+        // 防漏：导出白名单的变量 README 必须全列（动 EXPORT 必同步 README）
+        const missingFromReadme = [...exported].filter((name) => !readme.has(name));
+        assert.deepEqual(missingFromReadme, [],
+            'EXPORT_CSS_VARS 有变量未列进 README——同步后再提交');
+
+        // 防陈旧：README 列的每个变量必须有代码背书（主题定义或导出消费）
+        const authority = new Set([...exported, ...themeVars]);
+        const staleInReadme = [...readme].filter((name) => !authority.has(name));
+        assert.deepEqual(staleInReadme, [],
+            'README 列出了权威源不存在的变量——已删除/改名未同步');
     });
 });
 

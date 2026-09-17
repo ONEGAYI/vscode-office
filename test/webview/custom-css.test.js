@@ -158,11 +158,21 @@ describe('W. 接线契约', () => {
       'watcher 覆盖目录下全部 css');
   });
 
-  it('host service：失败保形与计数语义', () => {
+  it('host service：失败保形、README 检测覆盖与旧脚手架清理', () => {
     const src = read(SERVICE_PATH);
     assert.ok(/if \(result !== undefined\)/.test(src), '目录级失败时不广播（保持上次叠加层）');
-    assert.ok(/name\.name !== 'README\.css'/.test(src), '计数排除脚手架 README.css（0=未启用）');
     assert.ok(/\(type & vscode\.FileType\.File\) === 0/.test(src), 'symlink 的 css 按位判定不被排除');
+    // README.md：扩展管理文档，检测不同后覆盖（磁盘副本随安装版本走）
+    const ensureBlock = src.split('ensureSnippetDir')[1]?.split('private static')[0] ?? '';
+    assert.ok(/README\.md/.test(ensureBlock), '文档落点为 README.md（.md 不进 css 扫描与 watcher）');
+    assert.ok(/=== nextReadme/.test(ensureBlock), '内容相同则跳过写盘（检测后覆盖）');
+    assert.ok(/readmeMarkdownContent\(\)/.test(ensureBlock), '内容来自单一模板');
+    // 旧版纯注释 README.css：未被用户改造则清理，改造过（剥注释非空）不删
+    assert.ok(/README\.css/.test(ensureBlock) && /fs\.delete/.test(ensureBlock),
+      '旧脚手架 README.css 安全清理');
+    // 计数不再排除任何 .css：脚手架已不生成 .css，剩下的都是用户文件
+    assert.ok(!/name\.name !==/.test(src.split('readSnippetDir')[1] ?? ''),
+      '计数语义：全部 .css 计为用户 snippet');
   });
 
   it('入口四段链路：settingsPanel 按钮 → Settings.ts 分发 → index.js emit → provider handler', () => {

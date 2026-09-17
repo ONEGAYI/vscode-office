@@ -4,7 +4,7 @@ import { broadcastToMarkdownWebviews } from '@/service/markdown/blockScroll';
 import {
     SnippetSource,
     collectSnippetCssText,
-    readmeCssContent,
+    readmeMarkdownContent,
     resolveSnippetDirPath,
 } from './customCssSnippets';
 
@@ -40,22 +40,38 @@ export class CustomCssService {
 
     /** Creates the snippet dir with a comments-only README on first use. */
     private static async ensureSnippetDir(dirUri: vscode.Uri): Promise<void> {
-        const readmeUri = vscode.Uri.joinPath(dirUri, 'README.css');
-        let writeReadme = true;
-        try {
-            // never overwrite: the user may have edited or repurposed it;
-            // writing only when missing lets deletions regenerate it
-            await vscode.workspace.fs.stat(readmeUri);
-            writeReadme = false;
-        } catch {
-            // README missing (dir may exist) - (re)write below
-        }
         // createDirectory is idempotent so racing panels that both see a
         // missing dir still converge, and both write the same README
         await vscode.workspace.fs.createDirectory(dirUri);
-        if (writeReadme) {
-            await vscode.workspace.fs.writeFile(readmeUri, Buffer.from(readmeCssContent(), 'utf8'));
+
+        // legacy scaffold: an old README.css that is still pure comments
+        // was never repurposed by the user - safe to clean up
+        const legacyUri = vscode.Uri.joinPath(dirUri, 'README.css');
+        try {
+            const legacyBytes = await vscode.workspace.fs.readFile(legacyUri);
+            const legacyText = Buffer.from(legacyBytes).toString('utf8');
+            if (legacyText.replace(/\/\*[\s\S]*?\*\//g, '').trim() === '') {
+                await vscode.workspace.fs.delete(legacyUri);
+            }
+        } catch {
+            // not present - nothing to clean
         }
+
+        // README.md is extension-owned documentation (its header says so):
+        // detect-then-write keeps the on-disk copy identical to the
+        // installed extension while avoiding needless writes. Being .md,
+        // it is invisible to the *.css scanner and watcher.
+        const readmeUri = vscode.Uri.joinPath(dirUri, 'README.md');
+        const nextReadme = readmeMarkdownContent();
+        try {
+            const bytes = await vscode.workspace.fs.readFile(readmeUri);
+            if (Buffer.from(bytes).toString('utf8') === nextReadme) {
+                return;
+            }
+        } catch {
+            // not present yet - write below
+        }
+        await vscode.workspace.fs.writeFile(readmeUri, Buffer.from(nextReadme, 'utf8'));
     }
 
     /**
@@ -92,9 +108,9 @@ export class CustomCssService {
                     },
                 });
             }
-            // the scaffold README is not a user snippet; it must not flip
-            // the telemetry "0 = feature unused" signal
-            this.cachedSnippetCount = sources.filter(name => name.name !== 'README.css').length;
+            // scaffold assets are .md (invisible here) or cleaned up in
+            // ensureSnippetDir, so every .css left is a user snippet
+            this.cachedSnippetCount = sources.length;
             const cssText = await collectSnippetCssText(sources, (name, error) => {
                 console.warn(`[vscode-office] custom css snippet skipped: ${name}`, error);
             });
