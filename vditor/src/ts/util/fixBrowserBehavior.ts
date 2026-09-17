@@ -381,13 +381,50 @@ const unwrapListBlock = (block: HTMLElement) => {
 const batchToggleList = (vditor: IVditor, range: Range, type: string): boolean => {
     const startBlock = hasClosestByAttribute(range.startContainer, "data-block", "0") as HTMLElement;
     const endBlock = hasClosestByAttribute(range.endContainer, "data-block", "0") as HTMLElement;
-    if (!startBlock || !endBlock || startBlock === endBlock) {
+    if (!startBlock || !endBlock) {
         return false;
     }
     const blocks = Array.from(vditor[vditor.currentMode].element.children);
-    const startIndex = blocks.indexOf(startBlock);
-    const endIndex = blocks.indexOf(endBlock);
+    let startIndex = blocks.indexOf(startBlock);
+    let endIndex = blocks.indexOf(endBlock);
     if (startIndex === -1 || endIndex === -1) {
+        return false;
+    }
+    // start 端点恰落在块边界（与所在块零交集，strip ZWSP 后无内容——块尾
+    // 边界哨兵的 ZWSP 不算内容）且表达为前块末尾时，推进到下一块：浏览器对
+    // 同一视觉位置有多种等价 Range 表达，不推进会使零交集的前一块被卷入
+    // 批量转换（fork issue #10）。end 侧不做对称回退：端点 ≡ 后块绝对起点
+    // 时按"选入该块"处理，与既有批量契约一致（跨块选区的测试辅助会把
+    // end 深入到目标块内部）
+    if (startIndex !== endIndex) {
+        const probe = startBlock.ownerDocument.createRange();
+        try {
+            probe.selectNodeContents(startBlock);
+            probe.setStart(range.startContainer, range.startOffset);
+            if (probe.toString().replace(new RegExp(Constants.ZWSP, "g"), "").length === 0
+                && startIndex + 1 <= endIndex) {
+                startIndex += 1;
+                // 同步推进 range 起点：零交集的前块只是等价位置表达，选区
+                // 的真实归属是下一块——推进后塌缩为单块返回 false 时，调用
+                // 方单块路径基于 startContainer 的解析（blockElement 与
+                // 重解析后的 itemElement）才能命中用户实际选中的块。目标取
+                // 块内文档序首个文本节点：首子为 input/br 等无子元素时
+                // firstChild 链会提前停在它们上面，锚点落到块元素自身会使
+                // 列表块的 itemElement 解析退化为 null、把整个既有列表错误
+                // 包裹成嵌套结构
+                const walker = startBlock.ownerDocument.createTreeWalker(
+                    blocks[startIndex] as Node, NodeFilter.SHOW_TEXT);
+                const firstText = walker.nextNode();
+                range.setStart(firstText || blocks[startIndex], 0);
+            }
+        } catch {
+            // 陈旧 range 的 offset 可能越界（IndexSizeError），按非零交集
+            // 处理，不推进
+        }
+    }
+    // 单块选区（含收缩后等价单块）交单块路径处理；批量分支的转换模板与
+    // 单块路径不同（check 空格记账等），误入会使选区恢复校验失败而塌缩
+    if (startIndex === endIndex) {
         return false;
     }
     const selected = blocks.slice(Math.min(startIndex, endIndex), Math.max(startIndex, endIndex) + 1);
@@ -436,7 +473,7 @@ const batchToggleList = (vditor: IVditor, range: Range, type: string): boolean =
 };
 
 export const listToggle = (vditor: IVditor, range: Range, type: string, cancel = true) => {
-    const itemElement = hasClosestByMatchTag(range.startContainer, "LI");
+    let itemElement = hasClosestByMatchTag(range.startContainer, "LI");
     // 块级转换不改变文本内容，偏移零平移；恢复失败时保留 wbr 供调用方
     // setRangeByWbr 兜底（既有塌缩光标路径）
     const savedSelection = captureSelectionOffsets(vditor);
@@ -449,6 +486,11 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
         restoreSelectionOffsets(vditor, savedSelection);
         return;
     }
+    // 批量分支的零交集推进可能已移动 range 起点（塌缩为单块返回 false 的
+    // 场景）：下方单块路径的 itemElement/blockElement 都锚定
+    // startContainer，须按推进后的锚点重解析——否则 itemElement 恒为
+    // 推进前块的 null，目标块为列表时添加分支会把整个列表包进新 li（N3）
+    itemElement = hasClosestByMatchTag(range.startContainer, "LI");
 
     // 单块 check 模板在内容前插入一个空格文本（`/> 内容`），选区端点随之 +1；
     // 切换分支的空格是条件插入不做记账，错位由 restore 的 text 校验兜底
@@ -469,6 +511,14 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
         if (!itemElement) {
             // 添加
             let blockElement = hasClosestByAttribute(range.startContainer, "data-block", "0");
+            if (blockElement
+                && !BATCH_PARAGRAPH.test(blockElement.tagName) && !BATCH_LIST.test(blockElement.tagName)) {
+                // 结构块（表格/hr 等，含零交集推进塌缩后锚点落入的情形）
+                // 不做列表转换——批量分支对结构块的原样保留契约（R1），
+                // 直接恢复选区返回，不产生包裹破坏
+                restoreSelectionOffsets(vditor, savedSelection);
+                return;
+            }
             if (!blockElement) {
                 vditor[vditor.currentMode].element.querySelector("wbr").remove();
                 blockElement = vditor[vditor.currentMode].element.querySelector("p");

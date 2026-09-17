@@ -165,12 +165,15 @@ const collectEditorTextNodes = (editor: HTMLElement): Text[] => {
 };
 
 /** 全局文本偏移 → Range（与 captureSelectionOffsets 的 strip 口径互逆）；
- *  编辑器无文本节点返回 null */
+ *  编辑器无文本节点返回 null。
+ *  端点偏向不对称（#10）：start 端点按 start 偏向落在后一节点开头、end
+ *  端点按 end 偏向落在前一节点末尾——边界点的 capture↔restore 往返是
+ *  视觉等价位置而非同一 DOM 点，防止恢复的选区 start 漂移进前一块 */
 export const setRangeByEditorTextOffset = (editor: HTMLElement, start: number, end: number): Range | null => {
     const textNodes = collectEditorTextNodes(editor);
     const lengths = textNodes.map((node) => stripZwspLength(node.textContent || ""));
-    const startAt = locateTextOffset(lengths, start);
-    const endAt = locateTextOffset(lengths, end);
+    const startAt = locateTextOffset(lengths, start, "start");
+    const endAt = locateTextOffset(lengths, end, "end");
     if (!startAt || !endAt) {
         return null;
     }
