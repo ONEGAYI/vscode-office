@@ -4,7 +4,7 @@ import {listToggle} from "../util/fixBrowserBehavior";
 import {hasClosestBlock, hasClosestByMatchTag} from "../util/hasClosest";
 import {processCodeRender} from "../util/processCode";
 import {renderCodeBlocks} from "../codeBlock/codeMirrorManager";
-import {getEditorRange, setRangeByWbr, setSelectionFocus} from "../util/selection";
+import {getEditorRange, setRangeByWbr, setSelectionFocus, captureSelectionOffsets, restoreSelectionOffsets} from "../util/selection";
 import {afterRenderEvent} from "./afterRenderEvent";
 import {genAPopover, highlightToolbarWYSIWYG} from "./highlightToolbarWYSIWYG";
 import {getNextHTML, getPreviousHTML, splitElement} from "./inlineTag";
@@ -104,10 +104,13 @@ export const toolbarEvent = (vditor: IVditor, actionBtn: Element, event: Event) 
             if (quoteElement) {
                 useHighlight = false;
                 actionBtn.classList.remove("vditor-menu--current");
+                const savedSelection = captureSelectionOffsets(vditor);
                 range.insertNode(document.createElement("wbr"));
                 quoteElement.outerHTML = quoteElement.innerHTML.trim() === "" ?
                     `<p data-block="0">${quoteElement.innerHTML}</p>` : quoteElement.innerHTML;
-                setRangeByWbr(vditor.wysiwyg.element, range);
+                if (!restoreSelectionOffsets(vditor, savedSelection)) {
+                    setRangeByWbr(vditor.wysiwyg.element, range);
+                }
             }
         } else if (commandName === "inline-code") {
             let inlineCodeElement = hasClosestByMatchTag(range.startContainer, "CODE");
@@ -115,8 +118,11 @@ export const toolbarEvent = (vditor: IVditor, actionBtn: Element, event: Event) 
                 inlineCodeElement = range.startContainer.childNodes[range.startOffset] as HTMLElement;
             }
             if (inlineCodeElement) {
+                const savedSelection = captureSelectionOffsets(vditor);
                 inlineCodeElement.outerHTML = inlineCodeElement.innerHTML.replace(Constants.ZWSP, "") + "<wbr>";
-                setRangeByWbr(vditor.wysiwyg.element, range);
+                if (!restoreSelectionOffsets(vditor, savedSelection)) {
+                    setRangeByWbr(vditor.wysiwyg.element, range);
+                }
             }
         } else if (commandName === "link") {
             if (!range.collapsed) {
@@ -156,6 +162,7 @@ export const toolbarEvent = (vditor: IVditor, actionBtn: Element, event: Event) 
             if (blockElement) {
                 useHighlight = false;
                 actionBtn.classList.add("vditor-menu--current");
+                const savedSelection = captureSelectionOffsets(vditor);
                 range.insertNode(document.createElement("wbr"));
 
                 const liElement = hasClosestByMatchTag(range.startContainer, "LI");
@@ -165,7 +172,9 @@ export const toolbarEvent = (vditor: IVditor, actionBtn: Element, event: Event) 
                 } else {
                     blockElement.outerHTML = `<blockquote data-block="0">${blockElement.outerHTML}</blockquote>`;
                 }
-                setRangeByWbr(vditor.wysiwyg.element, range);
+                if (!restoreSelectionOffsets(vditor, savedSelection)) {
+                    setRangeByWbr(vditor.wysiwyg.element, range);
+                }
             }
         } else if (commandName === "check" || commandName === "list" || commandName === "ordered-list") {
             listToggle(vditor, range, commandName, false);
