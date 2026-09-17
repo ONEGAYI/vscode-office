@@ -109,6 +109,31 @@ export const readmeMarkdownContent = (): string => `# 自定义 CSS 片段（cus
 .vditor-reset h2 { font-size: 1.3em; }
 \`\`\`
 
+## 完整示例：Things 风格标题
+
+Obsidian Things 主题的标题方案——h3 蓝 / h4 黄 / h5 红 / h6 弱化灰，
+h2 全幅下划线。新建 \`.css\` 文件粘贴即用：
+
+\`\`\`css
+.vditor-reset h1, .vditor-reset h2 { color: var(--front-color); font-weight: 700; }
+.vditor-reset h3 { color: #2e80f2; }
+.vditor-reset h4 { color: #e5b567; }
+.vditor-reset h5 { color: #e83e3e; }
+.vditor-reset h6 { color: color-mix(in srgb, var(--front-color) 60%, transparent); }
+
+/* h2 下划线贯穿整个页面（版面宽度调窄也不中断）；
+   只想随内容列宽：删掉整个 ::after 块，改写 border-bottom 即可 */
+.vditor-reset h2 { position: relative; padding-bottom: 2px; }
+.vditor-reset h2::after {
+  content: '';
+  position: absolute;
+  left: calc(50% - 50vw);
+  right: calc(50% - 50vw);
+  bottom: 0;
+  border-bottom: 2px solid var(--border-color);
+}
+\`\`\`
+
 注意：IR 模式展开时的 \`#\` 标记与标题左侧的 H1/H2 徽标由编辑器独立
 着色（分别跟随正文色与次级色），上面的标题颜色规则不会影响它们。
 
