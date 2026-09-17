@@ -39,6 +39,15 @@
  *
  * Intentional divergences from the hardened source (fixes for defects the
  * source also carries — keep in sync when porting back):
+ *   - marker edits commit DEFERRED, not per keystroke: input inside the span
+ *     is only swallowed. Enter/Space/Tab commit explicitly (full pipeline:
+ *     undo record + re-spin), the caret leaving the span folds the text into
+ *     the list attributes silently (foldLive — first items only, whole-list
+ *     attribute sync, host save reported via options.input, no re-spin, no
+ *     undo record), Escape drops the edit. The source committed on every
+ *     keystroke, so any multi-char edit broke after its first char (the
+ *     span vanished; the second char hit the content or failed parseMarker
+ *     and disappeared).
  *   - Enter/Space intercept requires the caret INSIDE the marker span
  *     (`span`), not merely a live span on the line (`liSpan`): ensureLive
  *     keeps a span on the focused line even when the caret is in the item
@@ -54,12 +63,20 @@
  *     carries data-marker and couples with the checkbox layout).
  *
  * Known limitations shared with the source (documented, not fixed):
- *   - single-char input inside the span commits immediately, so the
- *     delete-then-type path for multi-digit markers truncates (type the
- *     digits before the delimiter instead: "1." → "10." works, deleting
- *     down to "1" then typing "0." loses the input).
  *   - text pasted into the marker span that fails parseMarker is silently
- *     dropped (the marker keeps its previous value).
+ *     dropped when the edit folds (the marker keeps its previous value).
+ *   - fold commits (caret leaving the span) bypass the undo stack: Ctrl+Z
+ *     cannot revert a marker edit that was committed by clicking away —
+ *     Enter/Space/Tab is the only recording commit path.
+ *   - full-document redraws (setValue / external-change reload / AI
+ *     applyAIResult) drop an unsubmitted in-span marker edit together with
+ *     the span itself.
+ *   - undo debounce race: a pending recordHistory timer from an edit made
+ *     just before a marker session can capture the DOM mid-edit (span with
+ *     half-typed text). Restoring such a snapshot and then clicking away
+ *     folds (commits) the half-typed marker instead of discarding it, so
+ *     one undo step may not fully revert. Narrow window, data is never
+ *     lost; re-undoing reaches the earlier snapshot.
  *   - the first marker edit right after document load (~undoDelay, before
  *     the boot snapshot lands on the undo stack) is not undoable: it clears
  *     the pending boot-snapshot push and never captures a restorable
@@ -138,6 +155,16 @@
     return false;
   }
 
+  /** Last left-button mousedown point, for restoring the precise caret on
+   * first-time marker activation (see ensureLive). Consumed once. */
+  var lastMarkerClick = null;
+
+  function onMouseDownCapture(event) {
+    if (!inEditorMode()) return;
+    if (event.button !== 0) return;
+    lastMarkerClick = { x: event.clientX, y: event.clientY, t: Date.now() };
+  }
+
   function ensureLive(li) {
     if (liveSpanOf(li)) return;
     // An item with no content text must NOT get a span: it would be the li's
@@ -150,33 +177,59 @@
     var span = document.createElement('span');
     span.className = SPAN_CLASS;
     span.textContent = marker + '\u00A0';
-    // A caret parked at (li, 0) — e.g. a click on the line start of an item
-    // whose first child is a block wrapper — would end up BEFORE the injected
-    // span (the marker), visually jumping to the marker's first character.
-    // Nudge it past the span (the content start) instead.
+    // A caret parked at (li, 0) — the only place the browser can put it when
+    // clicking a marker that is still CSS-rendered (::before, not DOM) —
+    // would end up BEFORE the injected span, visually jumping to the
+    // marker's first character. If this activation came from a fresh
+    // mousedown, restore the EXACT click point via hit-testing now that the
+    // span occupies the marker area (the coarse (li,1) nudge below is the
+    // fallback: after browser normalization it lands after the delimiter,
+    // not where the user clicked — they'd have to click a second time).
     var sel = document.getSelection();
     var caretAtLiStart = sel && sel.rangeCount > 0
       && sel.anchorNode === li && sel.anchorOffset === 0;
     li.insertBefore(span, li.firstChild);
     li.classList.add(LI_LIVE_CLASS);
     if (caretAtLiStart) {
-      var range = document.createRange();
-      range.setStart(li, 1);
-      range.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(range);
+      var placed = false;
+      var pt = lastMarkerClick;
+      lastMarkerClick = null;
+      if (pt && Date.now() - pt.t < 600) {
+        var doc = li.ownerDocument;
+        var pos = null;
+        if (typeof doc.caretPositionFromPoint === 'function') {
+          var p = doc.caretPositionFromPoint(pt.x, pt.y);
+          if (p) pos = { node: p.offsetNode, offset: p.offset };
+        } else if (typeof doc.caretRangeFromPoint === 'function') {
+          var r = doc.caretRangeFromPoint(pt.x, pt.y);
+          if (r) pos = { node: r.startContainer, offset: r.startOffset };
+        }
+        if (pos && pos.node && span.contains(pos.node)) {
+          var hit = document.createRange();
+          hit.setStart(pos.node, pos.offset);
+          hit.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(hit);
+          placed = true;
+        }
+      }
+      if (!placed) {
+        var range = document.createRange();
+        range.setStart(li, 1);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
     }
   }
 
   /**
-   * Remove the live span. If the caret currently sits inside the span, move it
-   * to the start of the li's real content first — removing a node that holds
-   * the selection anchor leaves a detached range, which re-triggers
-   * selectionchange and can loop.
+   * Move the caret out of the span to the start of the li's real content —
+   * if it currently sits inside the span. Removing a node that holds the
+   * selection anchor leaves a detached range, which re-triggers
+   * selectionchange and can loop. Selection is left alone otherwise.
    */
-  function clearLive(li) {
-    var span = liveSpanOf(li);
-    if (!span) return;
+  function moveCaretOutOfSpan(span, li) {
     var sel = document.getSelection();
     if (sel && sel.rangeCount > 0) {
       var node = sel.anchorNode;
@@ -189,8 +242,100 @@
         sel.addRange(range);
       }
     }
+  }
+
+  /**
+   * Drop the live span WITHOUT committing: the edited marker text is
+   * discarded and the CSS-rendered marker (previous data-marker) is
+   * restored. Escape key path — the user explicitly abandoned the edit.
+   */
+  function clearLive(li) {
+    var span = liveSpanOf(li);
+    if (!span) return;
+    moveCaretOutOfSpan(span, li);
     span.remove();
     li.classList.remove(LI_LIVE_CLASS);
+  }
+
+  /**
+   * Fold the live span's text into the list's marker attributes and swap
+   * back to the CSS-rendered marker. This is the silent commit for "caret
+   * left the span" (clicked into the content, or onto another line): an
+   * invalid mid-edit text (e.g. ".") keeps the previous marker — a silent
+   * revert, same fallback the Lute gate applies. No input event is
+   * dispatched and the selection is not touched beyond moving it out of
+   * the span: re-spinning the DOM inside selectionchange would steal the
+   * caret the user just placed elsewhere (see applyFirstMarker for the
+   * first-item-only rule and notifySaved for the host save report).
+   */
+  function foldLive(li) {
+    var span = liveSpanOf(li);
+    if (!span) return;
+    var text = span.textContent || '';
+    moveCaretOutOfSpan(span, li);
+    if (applyFirstMarker(li, text)) notifySaved();
+    span.remove();
+    li.classList.remove(LI_LIVE_CLASS);
+  }
+
+  /**
+   * Fold-path marker write: FIRST items only, syncing the whole list's
+   * data-marker attributes. Lute's numbering authority is the ol start /
+   * the first li's data-marker: a middle item's hand-edited marker is
+   * rewritten back to sequential numbering on the next spin (ordered) or
+   * splits the list (unordered), so writing it would only defer the
+   * surprise — refusing keeps the fold channel observably identical to
+   * the Enter channel (the edit simply does not take effect). Writing the
+   * first item re-syncs every li so getValue serializes the renumbered
+   * markdown immediately (the Enter channel gets this from the spin; the
+   * fold must do it by hand). Returns true when the marker was written.
+   */
+  function applyFirstMarker(li, raw) {
+    var parent = li.parentElement;
+    if (!parent || (parent.tagName !== 'OL' && parent.tagName !== 'UL')) return false;
+    if (parent.firstElementChild !== li) return false;
+    var marker = parseMarker(raw, li);
+    if (!marker) return false;
+    li.setAttribute('data-marker', marker);
+    parent.setAttribute('data-marker', marker);
+    if (parent.tagName === 'OL') {
+      var n = parseInt(marker, 10);
+      if (isNaN(n)) return true;
+      parent.setAttribute('start', String(n));
+      var delim = marker.slice(-1);
+      for (var i = 1; i < parent.children.length; i++) {
+        parent.children[i].setAttribute('data-marker', String(n + i) + delim);
+      }
+    } else {
+      for (var j = 1; j < parent.children.length; j++) {
+        parent.children[j].setAttribute('data-marker', marker);
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Report a committed marker edit to the host save pipeline. The host
+   * only hears about edits through vditor's options.input callback
+   * (webview index.js → emit("save") → scheduleDocumentSync): without it
+   * the document stays clean and Ctrl+S / panel close silently lose the
+   * edit. The DOM input event is deliberately NOT dispatched (the spin
+   * would steal the caret); the attributes are already final, so the
+   * serialized value is reported as-is. Undo is not recorded (Known
+   * limitations).
+   *
+   * Object model: install() receives the Vditor instance itself (index.js
+   * `editor = new Vditor(...)`), so getValue() lives on currentEditor
+   * while options.input lives on the inner IVditor (currentEditor.vditor)
+   * — the same split editorEl() relies on.
+   */
+  function notifySaved() {
+    var outer = currentEditor;
+    var inner = outer && outer.vditor;
+    if (outer && typeof outer.getValue === 'function'
+      && inner && inner.options && typeof inner.options.input === 'function') {
+      inner.options.input(outer.getValue());
+    }
   }
 
   /** First caret position of the li's own content (after any live span). */
@@ -246,17 +391,26 @@
     var sel = document.getSelection();
     var activeLi = (sel && sel.rangeCount > 0) ? closestLi(sel.anchorNode) : null;
 
-    // Remove every stale span (previous line, undo-restored snapshots, …) —
-    // but never the active line's: wiping it would reset marker text the user
-    // is mid-edit on.
+    // Fold every stale span (previous line, undo-restored snapshots, …) back
+    // into the attributes — but never the active line's while the caret is
+    // still inside its span: that would reset marker text the user is
+    // mid-edit on. Folding (not just clearing) commits the edit the user
+    // made before clicking away.
     editor.querySelectorAll('.' + SPAN_CLASS).forEach(function (span) {
       var li = span.closest('li');
       if (li && li === activeLi) return;
-      if (li) clearLive(li);
+      if (li) foldLive(li);
       else span.remove();
     });
 
-    if (activeLi) ensureLive(activeLi);
+    if (activeLi) {
+      var live = liveSpanOf(activeLi);
+      // Caret left the span but stayed on the line (clicked into the item
+      // content): fold the edit, then ensureLive re-creates the span
+      // showing the (possibly updated) marker — the line is still focused.
+      if (live && caretSpan() !== live) foldLive(activeLi);
+      ensureLive(activeLi);
+    }
   }
 
   // ── marker commit (span → attributes → vditor pipeline) ──────────────────
@@ -347,15 +501,21 @@
     if (!inEditorMode()) return;
     var span = caretSpan();
     if (!span) return;
-    // Caret is inside the marker span: swallow this event (vditor's handler
-    // would see the span text as li content) and commit through our pipeline.
+    // Caret is inside the marker span: swallow the event so vditor's handler
+    // never sees the span text as li content. The edit itself already landed
+    // in the span text (browser default). Committing is DEFERRED — Enter /
+    // Space / Tab commit explicitly, leaving the span folds silently
+    // (foldLive). Committing on every keystroke broke every multi-char
+    // marker edit: the span was removed after the first char, so the second
+    // char either landed in the item content or failed parseMarker and
+    // vanished (user-visible: cannot renumber, typing dead).
     event.stopPropagation();
     var li = span.closest('li');
     if (li && spanMarkerText(span) === '') {
+      // marker emptied via a selection-delete (Delete key: input event, not
+      // the Backspace keydown path) — same lift as char-by-char backspace
       liftOutOfList(li);
-      return;
     }
-    commitSpan(span);
   }
 
   function onKeydownCapture(event) {
@@ -380,6 +540,18 @@
         event.stopPropagation();
         commitSpan(span);
       }
+      return;
+    }
+
+    if (event.key === 'Escape' && span) {
+      // abandon an in-progress marker edit: drop the edited text, restore
+      // the CSS-rendered (previous) marker. Condition mirrors Enter/Space
+      // (caret INSIDE the span): with the caret in the content there is no
+      // pending edit to abandon — swallowing would block the host's own
+      // Escape semantics for no benefit
+      event.preventDefault();
+      event.stopPropagation();
+      clearLive(li);
       return;
     }
 
@@ -443,7 +615,15 @@
     doc.querySelectorAll('.' + SPAN_CLASS).forEach(function (span) {
       var li = span.closest('li');
       if (li) applyMarker(li, span.textContent || '');
-      span.remove();
+      // Keep a caret anchor when one was planted inside the span: the ir
+      // compositionend path spins the DOM through Lute as a direct function
+      // call (not an event — the interception layers never see it), and
+      // stripping the span together with its wbr leaves setRangeByWbr
+      // nothing to find, losing the caret. Spans without a wbr are removed
+      // as before (serialization paths carry no anchor).
+      var anchor = span.querySelector('wbr');
+      if (anchor) span.replaceWith(anchor);
+      else span.remove();
     });
     return doc.body.innerHTML;
   }
@@ -486,6 +666,7 @@
       document.addEventListener('selectionchange', onSelectionChange, false);
       document.addEventListener('input', onInputCapture, true);
       document.addEventListener('keydown', onKeydownCapture, true);
+      document.addEventListener('mousedown', onMouseDownCapture, true);
     }
     wrapLute();
   }
