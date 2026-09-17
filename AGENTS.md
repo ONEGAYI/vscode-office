@@ -29,9 +29,11 @@
 - 代码块 CodeMirror 挂载入口是 `renderCodeBlocks`（懒挂载，视口 ±200px 内挂载、屏外 placeholder）；任何全文 DOM 替换路径（`setValue`/`applyAIResult`）之后必须补调，否则代码块退化为纯文本（IR 分支曾遗漏，上游 PR #612 修复）
 - markdown webview 渲染不可信文档内容，**所有 webview → host 消息按攻击者输入处理**：校验模式见 `src/service/markdown/webviewInputValidation.ts`（上游 PR #610）
 - 外部磁盘变更兜底：`checkExternalDiskChange` + `onWillSaveTextDocument` 停靠模式（上游 PR #611）；已知限制（watcher 覆盖、双面板）见 fork issues #4/#5
+- 大纲面板（vditor 内置 Outline）拖拽重排与标式透传（feat/outline-drag-reorder）：区域划分/插入判定在 `vditor/src/ts/outline/sectionIndex.ts`（纯函数，单测契约）；拖拽提交配方照抄 blockHandle 块拖拽（DOM 移动 → `renderTocNow` → `undo.addToUndoStack` → `execAfterRender({enableAddUndoStack:false})`），移动后需把光标定位到被拖标题，否则 undo 快照无 `<wbr>` 且无选区时 `renderDiff` 会崩；条目内容统一用剥离 marker 的标题克隆 innerHTML（修复 ir 路径 Lute ToC 丢弃 `<s>`），元素级样式走 `styleSnapshot.ts` 偏差式注入（与编辑器根计算值对比，font-size 恒不透传）；大纲行 id → 标题解析必须限于当前编辑器子级，**不能用 `document.getElementById`**（同页多编辑器/重复 id 时会命中他处导致拖拽静默失效，真实浏览器探针实测教训）
 
 ## 进行中工作索引
 
 - 上游待合并 PR：#610（webview 输入校验）/ #611（外部变更兜底）/ #612（IR 模式 CM 重挂载 + codeRender 清理）
 - fork issues：#1 列表 marker 移植（排期中，需先补 Lute 语义门测试）；#2 #3 已修（随 PR #612）；#4 watcher 覆盖 / #5 双面板协调 → 分支 `fix/markdown-external-sync-coverage`（基于 #611 head，待 #611 合并后无缝 PR）
+- 大纲拖拽重排 + 标式透传：分支 `feat/outline-drag-reorder`（工作树 `vscode-office-outline`），189 项测试与真实浏览器探针已过，待用户验收后向本 fork 发 PR
 - 用户实测结论：键盘穿透问题在本 fork 无需修复（勿重复移植）

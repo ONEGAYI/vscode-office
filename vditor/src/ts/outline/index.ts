@@ -1,6 +1,7 @@
 import {Constants} from "../constants";
 import {outlineRender} from "../markdown/outlineRender";
 import {isEditorThemeMobileLayout, isMobileOutlineDrawerOpen, setMobileOutlineDrawerOpen, syncMobileOutlinePanel} from "../ui/mobileOutlineMenu";
+import {bindOutlineDrag} from "./dragReorder";
 import {
     getGlobalLocalStorageSetting,
     setGlobalLocalStorageSetting,
@@ -73,6 +74,8 @@ export class Outline {
 
     public init(vditor: IVditor) {
         this.vditor = vditor;
+        // 大纲拖拽重排：委托绑定在持久的面板内容容器上，重建 innerHTML 不失效
+        bindOutlineDrag(vditor, this.contentElement);
         this.restoreStoredWidth();
         const storedEnable = getStoredOutlineEnable(vditor);
         if (storedEnable !== null) {

@@ -1,4 +1,5 @@
 import { pinOutlineActive } from "../outline/updateOutlineActive";
+import { buildOutlineStyleSnapshot, collectComputedStyleSource } from "../outline/styleSnapshot";
 import { closeMobileOutline, isEditorThemeMobileLayout } from "../ui/mobileOutlineMenu";
 import { codicon } from "../util/codicon";
 import { hasClosestByHeadings } from "../util/hasClosestByHeadings";
@@ -19,16 +20,13 @@ const escapeOutlineCodeHTML = (element: HTMLElement) => {
     return element;
 };
 
-const getOutlineHeadingHTML = (item: HTMLElement, vditor?: IVditor) => {
+/** 标题克隆（ir 剥离 marker/wbr，code 内 & 转义）：outerHTML 喂给 Lute 生成结构，innerHTML 作为条目内容 */
+const getOutlineHeadingClone = (item: HTMLElement, vditor?: IVditor) => {
     const clone = vditor?.currentMode === "ir" ? stripIrOutlineMarkers(item) : item.cloneNode(true) as HTMLElement;
     clone.querySelectorAll("wbr").forEach((node) => {
         node.remove();
     });
-    escapeOutlineCodeHTML(clone);
-    if (vditor?.currentMode === "ir") {
-        return clone.outerHTML;
-    }
-    return clone.outerHTML;
+    return escapeOutlineCodeHTML(clone);
 };
 
 export const OUTLINE_SCROLL_OFFSET = 15;
@@ -64,6 +62,13 @@ export const scrollOutlineTarget = (scrollElement: HTMLElement, idElement: HTMLE
 export const outlineRender = (contentElement: HTMLElement, targetElement: Element, vditor?: IVditor) => {
     let tocHTML = "";
     const ids: string[] = [];
+    // 条目内容（剥离 marker 的克隆 innerHTML）与元素级样式快照，与 ids 按下标对齐
+    const itemContents: string[] = [];
+    const styleSnapshots: string[] = [];
+    const canComputeStyles = !!vditor && typeof getComputedStyle === "function";
+    const baseStyleSource = canComputeStyles
+        ? collectComputedStyleSource(getComputedStyle(contentElement))
+        : null;
     Array.from(contentElement.children).forEach((item: HTMLElement, index: number) => {
         if (hasClosestByHeadings(item)) {
             if (vditor) {
@@ -75,7 +80,18 @@ export const outlineRender = (contentElement: HTMLElement, targetElement: Elemen
                 }
             }
             ids.push(item.id);
-            tocHTML += getOutlineHeadingHTML(item, vditor);
+            const clone = getOutlineHeadingClone(item, vditor);
+            itemContents.push(clone.innerHTML);
+            // 偏差式透传：标题被 CSS 控制时仅注入与编辑器根不同的属性（font-size 恒不透传）
+            if (baseStyleSource) {
+                styleSnapshots.push(buildOutlineStyleSnapshot(
+                    collectComputedStyleSource(getComputedStyle(item)),
+                    baseStyleSource,
+                ));
+            } else {
+                styleSnapshots.push("");
+            }
+            tocHTML += clone.outerHTML;
         }
     });
     if (tocHTML === "") {
@@ -103,12 +119,21 @@ export const outlineRender = (contentElement: HTMLElement, targetElement: Elemen
         return "";
     }
     const headingsElement = tocRoot.querySelectorAll("li > span[data-target-id]");
+    // Lute 的 ToC 输出与标题数对齐时，条目内容以克隆为准（ir 路径 Lute 会丢弃 <s> 等行内标签）
+    const useClonedContents = headingsElement.length === itemContents.length;
     headingsElement.forEach((item, index) => {
         if (item.nextElementSibling && item.nextElementSibling.tagName === "UL") {
             const iconHTML = codicon("chevron-down", "vditor-outline__action");
             item.innerHTML = `${iconHTML}<span>${item.innerHTML}</span>`;
         } else {
             item.innerHTML = `<span class="vditor-outline__placeholder" aria-hidden="true"></span><span>${item.innerHTML}</span>`;
+        }
+        const contentSpan = item.lastElementChild;
+        if (useClonedContents && contentSpan) {
+            contentSpan.innerHTML = itemContents[index];
+            if (styleSnapshots[index]) {
+                contentSpan.setAttribute("style", styleSnapshots[index]);
+            }
         }
         item.setAttribute("data-target-id", ids[index]);
     });
