@@ -60,6 +60,10 @@
  *     down to "1" then typing "0." loses the input).
  *   - text pasted into the marker span that fails parseMarker is silently
  *     dropped (the marker keeps its previous value).
+ *   - the first marker edit right after document load (~undoDelay, before
+ *     the boot snapshot lands on the undo stack) is not undoable: undo
+ *     needs ≥2 stack entries and this edit never adds one. Same in both
+ *     modes; the window closes once the boot snapshot lands.
  */
 (function () {
   'use strict';
@@ -415,8 +419,13 @@
     var lute = currentEditor && currentEditor.vditor && currentEditor.vditor.lute;
     if (!lute || lute[WRAP_FLAG]) return;
     // VditorIRDOM2Md 不能少：ir 的 getValue（getMarkdown）走它序列化，
-    // 缺了这条门 span 会直接进 Lute、文本被粘进 li 内容（#12）
-    var methods = ['SpinVditorDOM', 'SpinVditorIRDOM', 'VditorDOM2Md', 'VditorIRDOM2Md'];
+    // 缺了这条门 span 会直接进 Lute、文本被粘进 li 内容（#12）。
+    // 三个 HTML 方法是纵深防御：getHTML 的导出路径（2HTML）实测输出
+    // 本就干净（Lute 把 span 文本折叠回 marker 语义），粘贴回灌入口
+    // （HTML2VditorIRDOM）的折叠光标复制场景 jsdom 无法坐实——统一
+    // 过门保证任何携带 span 的 HTML 进 Lute 前都被剥离
+    var methods = ['SpinVditorDOM', 'SpinVditorIRDOM', 'VditorDOM2Md', 'VditorIRDOM2Md',
+      'VditorDOM2HTML', 'VditorIRDOM2HTML', 'HTML2VditorDOM', 'HTML2VditorIRDOM'];
     for (var i = 0; i < methods.length; i++) {
       (function (name) {
         var orig = lute[name];

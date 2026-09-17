@@ -48,7 +48,7 @@ const fileUrl = (p) => 'file://' + p.replace(/\\/g, '/');
  * 以真实构建产物启动编辑器。返回 { window, document }。
  * 所有外部依赖（lute、i18n）预 eval 并以选项/桩短路加载器。
  */
-async function boot(content) {
+async function boot(content, mode = 'wysiwyg') {
   const virtualConsole = new VirtualConsole();
   const pageErrors = [];
   virtualConsole.on('jsdomError', (err) => pageErrors.push(String(err)));
@@ -56,7 +56,7 @@ async function boot(content) {
   const dom = new JSDOM('<!DOCTYPE html><html><head></head><body><div id="app"></div></body></html>', {
     runScripts: 'dangerously',
     resources: 'usable',
-    url: fileUrl(path.join(ROOT, '__list-marker-test__.html')),
+    url: fileUrl(path.join(ROOT, `__list-marker-${mode}-test__.html`)),
     pretendToBeVisual: true,
     virtualConsole,
   });
@@ -122,7 +122,7 @@ async function boot(content) {
   let booted = false;
   window.vditor = new window.Vditor('app', {
     value: content,
-    mode: 'wysiwyg',
+    mode,
     lang: 'en_US',
     i18n,
     cdn: fileUrl(path.join(ROOT, 'vditor')),
@@ -135,8 +135,8 @@ async function boot(content) {
   for (let i = 0; i < 60; i++) {
     await sleep(250);
     if (booted
-      && window.vditor.getCurrentMode && window.vditor.getCurrentMode() === 'wysiwyg'
-      && document.querySelector('.vditor-wysiwyg .vditor-reset')) {
+      && window.vditor.getCurrentMode && window.vditor.getCurrentMode() === mode
+      && document.querySelector(`.vditor-${mode} .vditor-reset`)) {
       return { window, document };
     }
   }
@@ -144,87 +144,7 @@ async function boot(content) {
 }
 
 /** ir 模式 boot（#11 探针结论：ir 的 li DOM/属性模型与 wysiwyg 一致） */
-async function bootIR(content) {
-  const virtualConsole = new VirtualConsole();
-  const pageErrors = [];
-  virtualConsole.on('jsdomError', (err) => pageErrors.push(String(err)));
-
-  const dom = new JSDOM('<!DOCTYPE html><html><head></head><body><div id="app"></div></body></html>', {
-    runScripts: 'dangerously',
-    resources: 'usable',
-    url: fileUrl(path.join(ROOT, '__list-marker-ir-test__.html')),
-    pretendToBeVisual: true,
-    virtualConsole,
-  });
-  const { window } = dom;
-  const { document } = window;
-  window.TextDecoder = TextDecoder;
-  window.TextEncoder = TextEncoder;
-  window.crypto = webcrypto;
-  if (typeof window.fetch === 'undefined') {
-    window.fetch = () => Promise.reject(new Error('fetch stub'));
-  }
-  if (typeof document.execCommand !== 'function') {
-    document.execCommand = function () { return true; };
-  }
-  if (!('innerText' in window.HTMLElement.prototype)) {
-    Object.defineProperty(window.HTMLElement.prototype, 'innerText', {
-      configurable: true,
-      get() { return this.textContent; },
-      set(v) { this.textContent = v; },
-    });
-  }
-  window.HTMLElement.prototype.scrollIntoView = function () { };
-  window.IntersectionObserver = class {
-    constructor() { }
-    observe() { }
-    unobserve() { }
-    disconnect() { }
-    takeRecords() { return []; }
-  };
-  window.matchMedia = window.matchMedia || ((q) => ({
-    matches: false, media: q, onchange: null,
-    addListener() { }, removeListener() { },
-    addEventListener() { }, removeEventListener() { },
-    dispatchEvent() { return false; },
-  }));
-  window.eval(fs.readFileSync(path.join(DIST, 'js', 'lute', 'lute.min.js'), 'utf8'));
-  const stubScript = (id) => {
-    const s = document.createElement('script');
-    s.id = id;
-    document.head.appendChild(s);
-  };
-  stubScript('vditorLuteScript');
-  window.eval(fs.readFileSync(path.join(DIST, 'js', 'i18n', 'en_US.js'), 'utf8'));
-  const i18n = window.VditorI18n;
-  window.eval(fs.readFileSync(path.join(DIST, 'index.min.js'), 'utf8'));
-  if (typeof window.Vditor === 'undefined') {
-    throw new Error('Vditor did not load');
-  }
-
-  let booted = false;
-  window.vditor = new window.Vditor('app', {
-    value: content,
-    mode: 'ir',
-    lang: 'en_US',
-    i18n,
-    cdn: fileUrl(path.join(ROOT, 'vditor')),
-    height: '600px',
-    cache: { enable: false },
-    toolbar: [],
-    after() { booted = true; },
-  });
-
-  for (let i = 0; i < 60; i++) {
-    await sleep(250);
-    if (booted
-      && window.vditor.getCurrentMode && window.vditor.getCurrentMode() === 'ir'
-      && document.querySelector('.vditor-ir .vditor-reset')) {
-      return { window, document };
-    }
-  }
-  throw new Error('editor did not boot; page errors: ' + pageErrors.join(' | ').slice(0, 2000));
-}
+const bootIR = (content) => boot(content, 'ir');
 
 /** 将光标放进文本节点的 offset 处并通知 selectionchange（jsdom 不会自动派发） */
 function setCaret(window, document, node, offset) {
@@ -754,9 +674,10 @@ describe('list-marker: live marker in ir mode (IE, #12)', { skip: DIST_READY ? f
   });
 
   it('IE5: ir marker 编辑进 undo 栈，恢复快照无泄漏', async () => {
-    // ir 模式 boot 无初始 undo 快照（undoStack.length === 0，与 wysiwyg 的
-    // 初始化差异）：先做一次普通编辑建立栈基线，undo 一次应回滚 marker
-    // 编辑而保留普通编辑（与 U0-U2 同构）
+    // undo 需要 undoStack ≥2 条目才动作（两模式一致；boot 快照经
+    // undoDelay 约 600ms 异步入栈，测试时点可能未及）：先做一次普通
+    // 编辑建立栈基线，undo 一次应回滚 marker 编辑而保留普通编辑
+    // （与 U0-U2 同构）
     const MD_IE = '1. first\n2. second\n\npara\n';
     const MD_IE_TYPED = '1. first\n2. second\n\nparaX\n';
     const b5 = await bootIR(MD_IE);
