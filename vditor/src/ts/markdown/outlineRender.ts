@@ -20,13 +20,25 @@ const escapeOutlineCodeHTML = (element: HTMLElement) => {
     return element;
 };
 
-/** 标题克隆（ir 剥离 marker/wbr，code 内 & 转义）：outerHTML 喂给 Lute 生成结构，innerHTML 作为条目内容 */
+/** 直通内容的纵深防御：剥离 on* 事件属性（编辑器 DOM 入口已过 Lute sanitize，此处仅兜底） */
+const stripEventAttributes = (element: HTMLElement) => {
+    element.querySelectorAll("*").forEach((node) => {
+        Array.from(node.attributes).forEach(({name}) => {
+            if (name.length > 2 && name.toLowerCase().startsWith("on")) {
+                node.removeAttribute(name);
+            }
+        });
+    });
+    return element;
+};
+
+/** 标题克隆（ir 剥离 marker/wbr）：innerHTML 作为条目直通内容，outerHTML 喂 Lute 生成结构 */
 const getOutlineHeadingClone = (item: HTMLElement, vditor?: IVditor) => {
     const clone = vditor?.currentMode === "ir" ? stripIrOutlineMarkers(item) : item.cloneNode(true) as HTMLElement;
     clone.querySelectorAll("wbr").forEach((node) => {
         node.remove();
     });
-    return escapeOutlineCodeHTML(clone);
+    return clone;
 };
 
 export const OUTLINE_SCROLL_OFFSET = 15;
@@ -81,7 +93,10 @@ export const outlineRender = (contentElement: HTMLElement, targetElement: Elemen
             }
             ids.push(item.id);
             const clone = getOutlineHeadingClone(item, vditor);
-            itemContents.push(clone.innerHTML);
+            // 直通内容不经 Lute 往返：innerHTML 赋值自带一次实体解析，不预转义（否则 & 双重转义）
+            itemContents.push(stripEventAttributes(clone).innerHTML);
+            // 喂 Lute 的路径需对 code 内 & 预转义，补偿 Lute 往返的一次反转义（基线行为）
+            tocHTML += escapeOutlineCodeHTML(clone).outerHTML;
             // 偏差式透传：标题被 CSS 控制时仅注入与编辑器根不同的属性（font-size 恒不透传）
             if (baseStyleSource) {
                 styleSnapshots.push(buildOutlineStyleSnapshot(
@@ -91,7 +106,6 @@ export const outlineRender = (contentElement: HTMLElement, targetElement: Elemen
             } else {
                 styleSnapshots.push("");
             }
-            tocHTML += clone.outerHTML;
         }
     });
     if (tocHTML === "") {

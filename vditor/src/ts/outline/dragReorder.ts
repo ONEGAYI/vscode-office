@@ -13,6 +13,8 @@ import {
 import { pinOutlineActive } from "./updateOutlineActive";
 
 const ITEM_SELECTOR = "span[data-target-id]";
+/** 本面板发起拖拽的自定义 MIME：dragover/drop 仅识别它，外来拖放（如编辑器选中文字）不触发重排 */
+const DRAG_MIME = "application/x-vditor-outline";
 const DRAG_SOURCE_CLASS = "vditor-outline__item--dragging";
 const DROP_ABOVE_CLASS = "vditor-outline__item--drop-above";
 const DROP_BELOW_CLASS = "vditor-outline__item--drop-below";
@@ -127,7 +129,8 @@ export const applyOutlineSectionMove = (vditor: IVditor, draggedHeading: HTMLEle
 };
 
 interface IOutlineDragState {
-    draggedId: string | null;
+    /** 持元素引用而非 id：outlineRender 每次渲染按位置重编号标题 id，拖拽中途重建不使拖拽对象漂移 */
+    draggedHeading: HTMLElement | null;
     indicatedRow: HTMLElement | null;
 }
 
@@ -141,7 +144,7 @@ export const bindOutlineDrag = (vditor: IVditor, contentElement: HTMLElement) =>
     }
     contentElement.dataset.outlineDragBound = "true";
     const state: IOutlineDragState = {
-        draggedId: null,
+        draggedHeading: null,
         indicatedRow: null,
     };
 
@@ -184,13 +187,16 @@ export const bindOutlineDrag = (vditor: IVditor, contentElement: HTMLElement) =>
         const row = rowOf(event.target);
         const draggedId = row?.getAttribute("data-target-id");
         const editor = vditor[vditor.currentMode].element;
-        if (!row || !event.dataTransfer || !draggedId || !findHeadingById(editor, draggedId)) {
+        const draggedHeading = draggedId ? findHeadingById(editor, draggedId) : null;
+        if (!row || !event.dataTransfer || !draggedHeading) {
             event.preventDefault();
             return;
         }
-        state.draggedId = draggedId;
-        // 仅 text/plain：编辑器 drop 只消费 DROP_EDITOR/Files/text/html，拖入正文为安全无操作
+        state.draggedHeading = draggedHeading;
+        // text/plain 供外部接收（编辑器 drop 只消费 DROP_EDITOR/Files/text/html，拖入正文为安全无操作）；
+        // 自定义 MIME 供本面板识别自己的拖拽
         event.dataTransfer.setData("text/plain", draggedId);
+        event.dataTransfer.setData(DRAG_MIME, draggedId);
         event.dataTransfer.effectAllowed = "move";
         row.classList.add(DRAG_SOURCE_CLASS);
     });
@@ -198,7 +204,8 @@ export const bindOutlineDrag = (vditor: IVditor, contentElement: HTMLElement) =>
     const resolveRowDrop = (event: DragEvent):
         { row: HTMLElement; position: OutlineDropPosition; draggedHeading: HTMLElement; targetHeading: HTMLElement }
         | null => {
-        if (!state.draggedId) {
+        if (!state.draggedHeading || !event.dataTransfer
+            || !event.dataTransfer.types.includes(DRAG_MIME)) {
             return null;
         }
         const row = rowOf(event.target);
@@ -207,9 +214,13 @@ export const bindOutlineDrag = (vditor: IVditor, contentElement: HTMLElement) =>
             return null;
         }
         const editor = vditor[vditor.currentMode].element;
-        const draggedHeading = findHeadingById(editor, state.draggedId);
+        const draggedHeading = state.draggedHeading;
+        // 拖拽中编辑器 DOM 被整体替换/删除该标题（如 AI 流式重写）时安全失效，不猜测对应关系
+        if (!editor.contains(draggedHeading)) {
+            return null;
+        }
         const targetHeading = findHeadingById(editor, targetId);
-        if (!draggedHeading || !targetHeading) {
+        if (!targetHeading) {
             return null;
         }
         const rect = row.getBoundingClientRect();
@@ -247,7 +258,7 @@ export const bindOutlineDrag = (vditor: IVditor, contentElement: HTMLElement) =>
     contentElement.addEventListener("drop", (event: DragEvent) => {
         const drop = resolveRowDrop(event);
         // 移动会立即重建大纲（dragend 将落在脱离文档的节点上不再冒泡），此处先行清理状态
-        state.draggedId = null;
+        state.draggedHeading = null;
         clearIndicators();
         if (!drop) {
             return;
@@ -258,7 +269,7 @@ export const bindOutlineDrag = (vditor: IVditor, contentElement: HTMLElement) =>
     });
 
     contentElement.addEventListener("dragend", () => {
-        state.draggedId = null;
+        state.draggedHeading = null;
         clearDragVisuals();
     });
 };

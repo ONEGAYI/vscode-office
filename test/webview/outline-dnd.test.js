@@ -8,6 +8,9 @@
  *   自嵌无效区拒绝、原位等价无操作、undo 一次恢复、options.input 保存链连通
  * - 大纲条目透传正文标题行内格式（strong/em/code/s，ir 含 <s> 丢失修复）与
  *   元素级 CSS 偏差快照注入（font-size 恒不透传）
+ * - 审查轮补充：拖拽中途大纲重建（id 重编号）不漂移拖拽对象、外来拖放不触发
+ *   重排（自定义 MIME 门）、直通内容单次转义与 on* 属性剥离、等价无操作保持
+ *   保存链静默
  *
  * 驱动真实构建产物（vditor/dist）：合成 mousedown/dragstart/dragover/drop/dragend
  * 事件序列（jsdom 无 DragEvent 构造器，用 Event + dataTransfer stub；
@@ -145,13 +148,16 @@ const contentSpanOf = (row) => row.lastElementChild;
 
 const getMd = (ctx) => stripTailingNewlines(ctx.window.vditor.getValue());
 
+// 大纲拖拽的自定义 MIME（dragReorder 以此识别本面板发起的拖拽）
+const OUTLINE_DRAG_MIME = 'application/x-vditor-outline';
+
 /** 合成拖拽事件（jsdom 无 DragEvent：Event + dataTransfer stub） */
-function fireDragEvent(ctx, target, type, { clientY = 0 } = {}) {
+function fireDragEvent(ctx, target, type, { clientY = 0, types = ['text/plain', OUTLINE_DRAG_MIME] } = {}) {
   const ev = new ctx.window.Event(type, { bubbles: true, cancelable: true });
   ev.dataTransfer = {
     setData() { },
     getData() { return ''; },
-    types: [],
+    types,
     effectAllowed: '',
     dropEffect: '',
   };
@@ -256,15 +262,18 @@ describe('outline drag reorder', { skip: !DIST_READY }, () => {
         }
       });
 
-      it('D5: 原位等价放置 — 无操作', async () => {
-        const ctx = await boot(MD_DND, { mode });
+      it('D5: 原位等价放置 — 无操作且不触发保存链', async () => {
+        const inputs = [];
+        const ctx = await boot(MD_DND, { mode, inputs });
         try {
-          await settle();
+          await sleep(800);
           const before = getMd(ctx);
+          const baseline = inputs.length;
           // h2 行放到 h1(Alpha) 行下方 = 插到自身当前位置 = 等价无操作
           dragRowTo(ctx, 1, 0, 'below');
-          await settle();
+          await sleep(1000);
           assert.equal(getMd(ctx), before, '源文本不应变化');
+          assert.equal(inputs.length, baseline, '等价无操作不应触发 options.input（宿主保存链静默）');
         } finally {
           ctx.window.close();
         }
@@ -303,6 +312,60 @@ describe('outline drag reorder', { skip: !DIST_READY }, () => {
             ].join('\n')),
             '最后一次 input 应携带重排后的全文',
           );
+        } finally {
+          ctx.window.close();
+        }
+      });
+      it('D8: 拖拽中途大纲重建重编号 id — 拖拽对象按元素引用不漂移', async () => {
+        const ctx = await boot('# A\n\na body\n\n# C\n\nc body\n', { mode });
+        try {
+          await settle();
+          const editor = resetEl(ctx);
+          const sourceRow = outlineRows(ctx)[1]; // C 行
+          fireDragEvent(ctx, sourceRow, 'mousedown');
+          fireDragEvent(ctx, sourceRow, 'dragstart');
+          // 拖拽中途文档头部插入新标题，防抖定时器触发大纲重建 → 标题 id 按位置整体重编号
+          const heading = ctx.document.createElement('h1');
+          heading.textContent = 'Z';
+          editor.insertBefore(heading, editor.firstChild);
+          inner(ctx).outline.render(inner(ctx));
+          await settle();
+          // 落到重建后的 A 行上方：应移动抓起的 C 区域，而不是旧 id 漂移后指向的 A
+          const targetRow = outlineRows(ctx)[1]; // [Z, A, C] 中的 A
+          targetRow.getBoundingClientRect = () => ({ top: 0, left: 0, right: 100, bottom: 0, width: 100, height: 0 });
+          fireDragEvent(ctx, targetRow, 'dragover', { clientY: 0 });
+          fireDragEvent(ctx, targetRow, 'drop', { clientY: 0 });
+          fireDragEvent(ctx, sourceRow, 'dragend'); // 源行已脱离文档；状态已在 drop 内清理
+          await settle();
+          assert.deepEqual(
+            outlineRows(ctx).map((r) => contentSpanOf(r).textContent.trim()),
+            ['Z', 'C', 'A'],
+            '移动的应是抓起的 C 区域',
+          );
+          const headings = Array.from(resetEl(ctx).children)
+            .filter((el) => /^H[1-6]$/.test(el.tagName))
+            .map((el) => el.textContent.replace(/#+/g, '').trim());
+          assert.deepEqual(headings, ['Z', 'C', 'A'], '编辑器内标题顺序应一致');
+        } finally {
+          ctx.window.close();
+        }
+      });
+
+      it('D9: 非大纲拖拽（无自定义 MIME）落在大纲面板 — 不触发重排', async () => {
+        const ctx = await boot(MD_DND, { mode });
+        try {
+          await settle();
+          const before = getMd(ctx);
+          const sourceRow = outlineRows(ctx)[0];
+          // 模拟残留拖拽状态 + 外来拖放（如编辑器内选中文字拖入面板）：无自定义 MIME
+          fireDragEvent(ctx, sourceRow, 'dragstart');
+          const targetRow = outlineRows(ctx)[2];
+          targetRow.getBoundingClientRect = () => ({ top: 0, left: 0, right: 100, bottom: 20, width: 100, height: 20 });
+          fireDragEvent(ctx, targetRow, 'dragover', { clientY: 15, types: ['text/plain'] });
+          fireDragEvent(ctx, targetRow, 'drop', { clientY: 15, types: ['text/plain'] });
+          fireDragEvent(ctx, sourceRow, 'dragend', { types: ['text/plain'] });
+          await settle();
+          assert.equal(getMd(ctx), before, '外来拖放不应触发章节重排');
         } finally {
           ctx.window.close();
         }
@@ -369,6 +432,36 @@ describe('outline style passthrough', { skip: !DIST_READY }, () => {
           inner(ctx).outline.render(inner(ctx));
           await settle();
           assert.equal(contentSpanOf(outlineRows(ctx)[0]).getAttribute('style'), null);
+        } finally {
+          ctx.window.close();
+        }
+      });
+
+      it('S5: 行内代码含 & — 直通路径单次转义显示', async () => {
+        const ctx = await boot('# Head `a && b` tail\n\nbody\n', { mode });
+        try {
+          await settle();
+          const text = contentSpanOf(outlineRows(ctx)[0]).textContent;
+          assert.ok(text.includes('a && b'), `code 芯片应显示字面 &&，实际: ${JSON.stringify(text)}`);
+          assert.ok(!text.includes('&amp;'), '直通路径不应叠加转义');
+        } finally {
+          ctx.window.close();
+        }
+      });
+
+      it('S6: 直通内容剥离 on* 事件属性（纵深防御）', async () => {
+        const ctx = await boot('# Head `code` tail\n\nbody\n', { mode });
+        try {
+          await settle();
+          const code = resetEl(ctx).querySelector('h1 code');
+          assert.ok(code, '前置：标题内 code 元素');
+          code.setAttribute('onclick', 'alert(1)');
+          inner(ctx).outline.render(inner(ctx));
+          await settle();
+          const html = contentSpanOf(outlineRows(ctx)[0]).innerHTML;
+          assert.ok(!/on[a-z]+\s*=/i.test(html), '大纲直通内容不应携带事件属性');
+          // 剥离只应作用于克隆，不污染编辑器 DOM
+          assert.ok(code.hasAttribute('onclick'), '编辑器原元素的 onclick 应保留');
         } finally {
           ctx.window.close();
         }
