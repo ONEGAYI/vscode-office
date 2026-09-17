@@ -40,17 +40,22 @@ export class CustomCssService {
 
     /** Creates the snippet dir with a comments-only README on first use. */
     private static async ensureSnippetDir(dirUri: vscode.Uri): Promise<void> {
+        const readmeUri = vscode.Uri.joinPath(dirUri, 'README.css');
+        let writeReadme = true;
         try {
-            await vscode.workspace.fs.stat(dirUri);
-            return;
+            // never overwrite: the user may have edited or repurposed it;
+            // writing only when missing lets deletions regenerate it
+            await vscode.workspace.fs.stat(readmeUri);
+            writeReadme = false;
         } catch {
-            // create below; createDirectory is idempotent so racing panels
-            // that both see the missing dir still converge, and both write
-            // the same README content
+            // README missing (dir may exist) - (re)write below
         }
+        // createDirectory is idempotent so racing panels that both see a
+        // missing dir still converge, and both write the same README
         await vscode.workspace.fs.createDirectory(dirUri);
-        await vscode.workspace.fs.writeFile(
-            vscode.Uri.joinPath(dirUri, 'README.css'), Buffer.from(readmeCssContent(), 'utf8'));
+        if (writeReadme) {
+            await vscode.workspace.fs.writeFile(readmeUri, Buffer.from(readmeCssContent(), 'utf8'));
+        }
     }
 
     /**

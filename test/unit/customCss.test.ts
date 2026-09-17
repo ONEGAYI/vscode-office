@@ -23,6 +23,17 @@ describe('readmeCssContent', () => {
         const withoutComments = content.replace(/\/\*[\s\S]*?\*\//g, '');
         assert.equal(withoutComments.trim(), '');
     });
+
+    it('carries the variable catalog inline (readers never need repo sources)', () => {
+        const content = readmeCssContent();
+        // 常用变量就地可查：不指路仓库源码（vsix 用户没有源码可翻）
+        assert.ok(!content.includes('vditor/src/'), 'README 不指路仓库源码路径');
+        for (const variable of ['--bg-color', '--front-color', '--link-color', '--code-bg-color',
+            '--cm-bg-color', '--ir-heading-color', '--chart-red', '--editor-font-size',
+            '--vditor-page-width', '--scrollbar-thumb']) {
+            assert.ok(content.includes(variable), `README 缺变量 ${variable}`);
+        }
+    });
 });
 
 describe('resolveSnippetDirPath', () => {
