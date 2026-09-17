@@ -50,4 +50,4 @@
 
 - 上游待合并 PR：#610（webview 输入校验）/ #611（外部变更兜底）/ #612（IR 模式 CM 重挂载 + codeRender 清理）/ #613（列表 marker 上游移植，基于 upstream/main）/ #615（工具栏样式操作后保留文本选区，基于 upstream/main，分支 `origin/fix/toolbar-selection-retention` 保留至合并）
 - fork PR #13（fix #10）：列表切换幂等取消吸并前段——locateTextOffset start 偏向 + batchToggleList 零交集推进/塌缩单块重解析 itemElement/结构块守卫（G1–G8 契约），review-loops 五轮收敛；#615 基础设施的上游跟进待定
-- fork PR #14（feat #11+#12）：ir list marker 编辑——#11 探针 GO（报告见 issue 评论，推翻"data-marker 空串"旧观察）+ #12 双模式落地（Lute 门 8 方法/liftOutOfList 列表外落点/CSS scope 扩展 .vditor-ir，IL0–IL6 + IE1–IE5 契约），review-loops 收敛
+- fork PR #14（feat #11+#12）：ir list marker 编辑——#11 探针 GO（报告见 issue 评论，推翻"data-marker 空串"旧观察）+ #12 双模式落地（Lute 门 8 方法/liftOutOfList 列表外落点/CSS scope 扩展 .vditor-ir，IL0–IL6 + IE1–IE6 契约），review-loops 收敛；追加 25f6838 修复用户实测空项光标闪跳（空 li 零子节点、原生落点 (li,0)，ensureLive 插 span 后 caret 停 span 前 → 注入时迁到 span 后；dev 宿主双向验证）
