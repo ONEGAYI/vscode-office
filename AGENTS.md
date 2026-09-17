@@ -22,6 +22,7 @@
 - 单元测试：`npm run test:unit`（`node --test "test/unit/*.test.ts"`，需 Node ≥ 22.6；仓库 CI 为 Node 20，PR 描述中注明该限制）
 - 根 `tsc --noEmit` 在 main 上即损坏（TS5070 配置错误），以 `npm run build` 作为编译门；eslint 只对改动文件执行
 - webview 行为验证：`vditor/dist` 可经本地 HTTP server + 探针页在真实浏览器中驱动（注意 stock vditor 的 CDN 拼接是 `{cdn}/dist/...`，cdn 参数指向 `vditor` 目录而非 `vditor/dist`）；探针文件验证完即删
+- dev 模式（F5）可运行的工作树需三件套：根 `node_modules`、`resource/markdown/dist`（vditor 子包构建）、`out/extension.js`（根 `npm run build`；`out/` 不进 git，新工作树默认没有）。交付新工作树供用户实测时三件齐备，否则注明缺什么
 
 ## 版本发布（fork Release）
 
