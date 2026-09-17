@@ -637,12 +637,14 @@ describe('list-ops: idempotent cancel & boundary endpoints (G, #10)', { skip: DI
   });
 
   it('G4: end 端点表达在后块绝对起点 → 按"选入该块"处理（语义记录）', async () => {
-    // 端点 ≡ 后块绝对起点（(block,0) 的等价位置：首文本@0 / 首子元素@0）
-    // 有两种等价 Range 表达。既有批量契约（T6 等）的选区辅助会把 end 深入
-    // 到目标块首子元素 @0，两种表达在 DOM 位置上不可区分——统一按"选入"
-    // 处理，不做对称回退（#10 只修 start 侧漂移：end 前归属本就是正确语义，
-    // 恢复的选区不会向后漂）。此用例固化该决策：end 在 post 开头 → post
-    // 被卷入批量转换，与 T6 行为一致
+    // 端点 ≡ 后块绝对起点（(block,0) 的等价位置）有多种等价 Range 表达
+    // （首文本@0 / 块内首个子元素@0）。既有批量契约（T6 等）的选区辅助
+    // 会把 end 深入到目标块内部（首文本节点末尾），G4 自身则表达在
+    // post 首文本@0——这些表达在视觉上都是"选入该块"，DOM 位置上与
+    // 块起点不可区分——统一按"选入"处理，不做对称回退（#10 只修
+    // start 侧漂移：end 前归属本就是正确语义，恢复的选区不会向后漂）。
+    // 此用例固化该决策：end 在 post 开头 → post 被卷入批量转换，
+    // 与 T6 行为一致
     const t = await boot('one\n\ntwo\n\npost\n');
     try {
       const [one, two, post] = paras(t);
@@ -696,6 +698,41 @@ describe('list-ops: idempotent cancel & boundary endpoints (G, #10)', { skip: DI
       assert.ok(ul, 'one（用户实际选中的块）应转列表');
       assert.equal(ul.querySelectorAll(':scope > li').length, 1);
       assert.match(ul.querySelector('li').textContent, /one/);
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('G7: start 零交集且推进后目标为列表块 → 走列表切换而非嵌套包裹（N3）', async () => {
+    // 审查终检发现 N3：零交集推进塌缩为单块后，单块路径的 itemElement
+    // 取自推进前的锚点（恒 null），添加分支会把整个既有列表块包进新 li
+    // 产生嵌套结构破坏（不增删文本，restore 校验静默放行）
+    const t = await boot('pre\n\n- one\n- two\n');
+    try {
+      const reset = resetEl(t);
+      const pre = paras(t)[0];
+      const ul = reset.querySelector('ul');
+      const { window, document } = t;
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.setStart(deepestFirstChild(pre), pre.textContent.length);
+      range.setEnd(deepestFirstChild(ul.querySelector('li')), 2);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.dispatchEvent(new window.Event('selectionchange'));
+
+      clickToolbar(t, 'ordered-list');
+      await settle();
+
+      const r2 = resetEl(t);
+      assert.equal(r2.querySelectorAll('ul ol, ol ul, ul ul, ol ol').length, 0,
+        '不得嵌套包裹既有列表');
+      const ol = r2.querySelector('ol');
+      assert.ok(ol, '应按切换语义处理（无序 → 有序）');
+      assert.equal(ol.querySelectorAll(':scope > li').length, 2);
+      const md = t.window.vditor.getValue();
+      assert.match(md, /1\. one/, JSON.stringify(md));
+      assert.ok(md.includes('pre'), '零交集的 pre 保持段落');
     } finally {
       t.window.close();
     }

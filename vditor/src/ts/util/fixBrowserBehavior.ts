@@ -406,13 +406,14 @@ const batchToggleList = (vditor: IVditor, range: Range, type: string): boolean =
                 startIndex += 1;
                 // 同步推进 range 起点：零交集的前块只是等价位置表达，选区
                 // 的真实归属是下一块——推进后塌缩为单块返回 false 时，调用
-                // 方单块路径的 blockElement/itemElement 解析（锚定
-                // startContainer）才能命中用户实际选中的块。目标取块内文档
-                // 序首个文本节点：首子为 input/br 等无子元素时 firstChild
-                // 链会提前停在它们上面，锚点落到块元素自身会使 itemElement
-                // 解析为 null、把整个既有列表错误包裹成嵌套结构
+                // 方单块路径基于 startContainer 的解析（blockElement 与
+                // 重解析后的 itemElement）才能命中用户实际选中的块。目标取
+                // 块内文档序首个文本节点：首子为 input/br 等无子元素时
+                // firstChild 链会提前停在它们上面，锚点落到块元素自身会使
+                // 列表块的 itemElement 解析退化为 null、把整个既有列表错误
+                // 包裹成嵌套结构
                 const walker = startBlock.ownerDocument.createTreeWalker(
-                    blocks[startIndex] as Node, 4 /* NodeFilter.SHOW_TEXT */);
+                    blocks[startIndex] as Node, NodeFilter.SHOW_TEXT);
                 const firstText = walker.nextNode();
                 range.setStart(firstText || blocks[startIndex], 0);
             }
@@ -472,7 +473,7 @@ const batchToggleList = (vditor: IVditor, range: Range, type: string): boolean =
 };
 
 export const listToggle = (vditor: IVditor, range: Range, type: string, cancel = true) => {
-    const itemElement = hasClosestByMatchTag(range.startContainer, "LI");
+    let itemElement = hasClosestByMatchTag(range.startContainer, "LI");
     // 块级转换不改变文本内容，偏移零平移；恢复失败时保留 wbr 供调用方
     // setRangeByWbr 兜底（既有塌缩光标路径）
     const savedSelection = captureSelectionOffsets(vditor);
@@ -485,6 +486,11 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
         restoreSelectionOffsets(vditor, savedSelection);
         return;
     }
+    // 批量分支的零交集推进可能已移动 range 起点（塌缩为单块返回 false 的
+    // 场景）：下方单块路径的 itemElement/blockElement 都锚定
+    // startContainer，须按推进后的锚点重解析——否则 itemElement 恒为
+    // 推进前块的 null，目标块为列表时添加分支会把整个列表包进新 li（N3）
+    itemElement = hasClosestByMatchTag(range.startContainer, "LI");
 
     // 单块 check 模板在内容前插入一个空格文本（`/> 内容`），选区端点随之 +1；
     // 切换分支的空格是条件插入不做记账，错位由 restore 的 text 校验兜底
