@@ -35,6 +35,7 @@
 
 ## 架构关键事实（避免重复踩坑）
 
+- **用户可见功能的入口惯例是编辑器内优先**：Settings 面板按钮是首要入口（先例 `editViewerSettings` 四段链路：`settingsPanel.ts` footer 按钮 → `toolbar/Settings.ts` 按 `data-*` 分发 → `index.js` emit → provider handler），VSCode 命令面板为补充，`package.json` 配置项只作机制参数不作功能入口——新功能必须显式决策入口并落地，"契约没写入口"不是放行理由（custom CSS 曾整体遗漏入口，验收时才发现）
 - `vditor/` 是深度定制的 fork（vscode-vditor 4.0.0，源自 vscode-ext-studio/vditor）：wysiwyg/ir 双模式、CodeMirror 6 代码块、AI 流式等。与 stock vditor 差异极大，**任何移植结论必须以本 fork 源码为准**（例：stock 的 `codeRender` 内联 max-height 在本 fork 预览路径被 CM 化掩盖）
 - 代码块 CodeMirror 挂载入口是 `renderCodeBlocks`（懒挂载，视口 ±200px 内挂载、屏外 placeholder）；任何全文 DOM 替换路径（`setValue`/`applyAIResult`）之后必须补调，否则代码块退化为纯文本（IR 分支曾遗漏，上游 PR #612 修复）
 - markdown webview 渲染不可信文档内容，**所有 webview → host 消息按攻击者输入处理**：校验模式见 `src/service/markdown/webviewInputValidation.ts`（上游 PR #610）
