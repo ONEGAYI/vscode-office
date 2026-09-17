@@ -23,6 +23,16 @@
 - 根 `tsc --noEmit` 在 main 上即损坏（TS5070 配置错误），以 `npm run build` 作为编译门；eslint 只对改动文件执行
 - webview 行为验证：`vditor/dist` 可经本地 HTTP server + 探针页在真实浏览器中驱动（注意 stock vditor 的 CDN 拼接是 `{cdn}/dist/...`，cdn 参数指向 `vditor` 目录而非 `vditor/dist`）；探针文件验证完即删
 
+## 版本发布（fork Release）
+
+发布到本 fork 的 GitHub Release 并附带 vsix 安装包，不发布市场。
+
+- **版本线**：`<minor>.0-fork.N`，基于上游 minor 起跳（首发 `4.3.0-fork.1`，基于上游 4.2.0 + fork 新功能）；同 minor 内只修 bug 递增 N，同步上游新 minor 时 minor 跟进。tag 用 `v` 前缀（`v4.3.0-fork.1`），打在 fork-main 发布提交上
+- **package.json 发布标识**：`publisher`=`ONEGAYI`、`displayName` 带 `(Fork)` 后缀、`bugs`/`homepage`/`repository` 指向本 fork；`viewType: cweijan.*` 与依赖 `@cweijan/exceljs` 是运行时标识，**不可改**。改 publisher 后扩展 ID 为 `ONEGAYI.vscode-office`，可与市场版并存、不被市场更新覆盖
+- **打包流程**：`cd vditor && npm run build`（产物复制到 `resource/markdown/dist`，被 .gitignore 忽略但必须进 vsix）→ `npm run test:unit` + `npm run test:webview` → `npm run package`（`vsce package --no-dependencies`，经 `vscode:prepublish` 自动重跑主仓 build）→ 产出 `vscode-office-<version>.vsix`。打包后抽查 vsix 内 `resource/markdown/dist/` 时间戳为本次构建
+- **创建 Release**：changelog 段写入临时文件，`gh release create v<version> --notes-file <file> vscode-office-<version>.vsix`（目标 origin）。gh 走 api.github.com 且不读 git 的代理配置，TLS 超时时以 `HTTPS_PROXY` 环境变量显式指定代理；命令超时后先查远端是否已建成功再决定重试
+- **changelog.md**：fork 版本段插在文件顶部（`# Change log` 总标题之后、上游最新段之前），中文、沿用上游"模块分组"式；底部 `<!-- 变更链接 -->` 段维护 fork 版本链接（首发用 `/commits/v<tag>`，后续用 `/compare/v旧...v新`）
+
 ## 架构关键事实（避免重复踩坑）
 
 - `vditor/` 是深度定制的 fork（vscode-vditor 4.0.0，源自 vscode-ext-studio/vditor）：wysiwyg/ir 双模式、CodeMirror 6 代码块、AI 流式等。与 stock vditor 差异极大，**任何移植结论必须以本 fork 源码为准**（例：stock 的 `codeRender` 内联 max-height 在本 fork 预览路径被 CM 化掩盖）

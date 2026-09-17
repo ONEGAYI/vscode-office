@@ -1,5 +1,25 @@
 # Change log
 
+# 4.3.0-fork.1 2026-9-17
+
+首个 fork 版本，基于上游 [cweijan/vscode-office](https://github.com/cweijan/vscode-office) 4.2.0。以下为 fork 相对上游的全部增强；安装包以 vsix 形式发布于本 fork 的 GitHub Release（扩展 ID 为 `ONEGAYI.vscode-office`，可与市场版并存）。
+
+Markdown 编辑器：
+
+- 新增大纲面板拖拽重排章节，条目按元素级样式快照透传（fork PR #7）
+- 新增段落源码行号与标题级别（Hx）徽标常驻显示，可在编辑器内 Settings 面板开关
+- 新增无序列表快捷键 ⇧⌘O，多段选中批量切换列表（含嵌套子列表支持）
+- 列表 marker 聚焦可直接编辑（Obsidian Live Preview 式）
+- 修复 IR 模式内容更新后代码块退化为纯文本（上游 PR #612）
+- 修复代码块预览路径滚动失效（上游 PR #612）
+- 修复行号分隔线滚动后消失
+- 修复开发服务器不可达时 webview 白屏，回退到内置构建资源
+
+安全与可靠性：
+
+- webview → host 消息全部按攻击者输入校验（链接、图片扩展名、命令白名单）（上游 PR #610）
+- 文档未保存时外部磁盘变更提示，多面板协调与 watcher 覆盖扩展（上游 PR #611 及后续）
+
 # 4.2.0 2026-8-16
 
 Markdown Editor:
@@ -878,3 +898,7 @@ Other:
 - Add photoshow support.
 - Add windows reg support.
 - Add paginition to docx view..
+
+<!-- 变更链接：fork 版本线 -->
+
+[4.3.0-fork.1]: https://github.com/ONEGAYI/vscode-office/commits/v4.3.0-fork.1
