@@ -511,6 +511,14 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
         if (!itemElement) {
             // 添加
             let blockElement = hasClosestByAttribute(range.startContainer, "data-block", "0");
+            if (blockElement
+                && !BATCH_PARAGRAPH.test(blockElement.tagName) && !BATCH_LIST.test(blockElement.tagName)) {
+                // 结构块（表格/hr 等，含零交集推进塌缩后锚点落入的情形）
+                // 不做列表转换——批量分支对结构块的原样保留契约（R1），
+                // 直接恢复选区返回，不产生包裹破坏
+                restoreSelectionOffsets(vditor, savedSelection);
+                return;
+            }
             if (!blockElement) {
                 vditor[vditor.currentMode].element.querySelector("wbr").remove();
                 blockElement = vditor[vditor.currentMode].element.querySelector("p");

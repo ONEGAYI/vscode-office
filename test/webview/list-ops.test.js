@@ -732,7 +732,39 @@ describe('list-ops: idempotent cancel & boundary endpoints (G, #10)', { skip: DI
       assert.equal(ol.querySelectorAll(':scope > li').length, 2);
       const md = t.window.vditor.getValue();
       assert.match(md, /1\. one/, JSON.stringify(md));
-      assert.ok(md.includes('pre'), '零交集的 pre 保持段落');
+      assert.ok(Array.from(r2.querySelectorAll('p[data-block="0"]'))
+        .some((p) => p.textContent.trim() === 'pre'), '零交集的 pre 保持段落');
+    } finally {
+      t.window.close();
+    }
+  });
+
+  it('G8: start 零交集塌缩目标为结构块（表格）→ 不转换不破坏（R1）', async () => {
+    // 终检 R1：N3 同族的窄触发残留——零交集推进塌缩后锚点落入结构块
+    // 时，添加分支不得把 table.innerHTML 包进 li；对齐批量分支对结构块
+    // "原样保留"的契约
+    const t = await boot('pre\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n');
+    try {
+      const reset = resetEl(t);
+      const pre = paras(t)[0];
+      const table = reset.querySelector('table');
+      const { window, document } = t;
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.setStart(deepestFirstChild(pre), pre.textContent.length);
+      range.setEnd(deepestFirstChild(table.querySelector('td')), 1);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.dispatchEvent(new window.Event('selectionchange'));
+
+      clickToolbar(t, 'list');
+      await settle();
+
+      const r2 = resetEl(t);
+      assert.equal(r2.querySelectorAll('table').length, 1, '表格保留');
+      assert.equal(r2.querySelectorAll('ul, ol').length, 0, '不产生列表');
+      assert.ok(Array.from(r2.querySelectorAll('p[data-block="0"]'))
+        .some((p) => p.textContent.trim() === 'pre'), 'pre 保持段落');
     } finally {
       t.window.close();
     }
