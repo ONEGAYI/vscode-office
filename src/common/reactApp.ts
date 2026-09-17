@@ -2,6 +2,8 @@ import axios from 'axios';
 import * as vscode from 'vscode';
 import { extensionResource, getExtensionUri, readExtensionText } from './extensionResource';
 import { IconService } from '../service/icon/iconService';
+import { resolveWebviewContent } from './webviewContent';
+import { Output } from './Output';
 
 interface ViewOption {
     route: string;
@@ -22,12 +24,12 @@ export class ReactApp {
     }
 
     public static async view(webview: vscode.Webview, option: ViewOption) {
-        const html = await this.readContent();
+        const content = await this.resolveContent();
         const iconConfig = IconService.getInstance().getWebviewConfig(this.context, webview);
         const sponsorBaseUrl = webview.asWebviewUri(
             extensionResource(this.context, 'resource', 'sponsor')
         ).toString();
-        webview.html = this.buildPath(html, webview)
+        webview.html = this.buildPath(content, webview)
             .replace(`{{configs}}`, JSON.stringify({
                 ...option,
                 ...iconConfig,
@@ -37,22 +39,30 @@ export class ReactApp {
             }));
     }
 
-    private static async readContent(): Promise<string> {
-        if (this.IS_DEV) {
-            const devServerUrl = 'http://127.0.0.1:5739';
-            const data: string = (await axios.get(`${devServerUrl}/index.html`, { transformResponse: [] })).data;
-            return data.replace(/(["'])\/(?=(?:@|src\/|index\.html\?))/g, `$1${devServerUrl}/`);
-        }
-        return readExtensionText(this.context, 'out', 'webview', 'index.html');
+    private static async resolveContent() {
+        const devServerUrl = 'http://127.0.0.1:5739';
+        return resolveWebviewContent({
+            isDev: this.IS_DEV,
+            fetchDev: async () => {
+                try {
+                    const data: string = (await axios.get(`${devServerUrl}/index.html`, { transformResponse: [], timeout: 3000 })).data;
+                    return data.replace(/(["'])\/(?=(?:@|src\/|index\.html\?))/g, `$1${devServerUrl}/`);
+                } catch (error) {
+                    Output.debug(`Webview dev server unreachable (${(error as Error)?.message}); serving the last production build from out/webview`);
+                    throw error;
+                }
+            },
+            readProd: () => readExtensionText(this.context, 'out', 'webview', 'index.html'),
+        });
     }
 
-    private static buildPath(data: string, webview: vscode.Webview): string {
-        const baseUrl = ReactApp.getBaseUrl(webview);
-        return data.replace('<base href="/">', `<base href="${baseUrl}/">`);
+    private static buildPath(content: { html: string; fromDevServer: boolean }, webview: vscode.Webview): string {
+        const baseUrl = ReactApp.getBaseUrl(webview, content.fromDevServer);
+        return content.html.replace('<base href="/">', `<base href="${baseUrl}/">`);
     }
 
-    private static getBaseUrl(webview: vscode.Webview) {
-        if (this.IS_DEV) {
+    private static getBaseUrl(webview: vscode.Webview, fromDevServer: boolean) {
+        if (fromDevServer) {
             return `http://127.0.0.1:5739`;
         }
         return webview.asWebviewUri(this.webviewUri).toString();
