@@ -1096,8 +1096,9 @@ describe('list-marker: live marker in ir mode (IE, #12)', { skip: DIST_READY ? f
   });
 
   it('IE16: 跨行点击 marker——caret 精确落在点击点（caretPositionFromPoint）', async () => {
-    // 首次跨行点击 marker 时它还是 CSS ::before（非 DOM），浏览器只能把
-    // caret 放到 (li,0)；注入 span 后的粗粒度 nudge (li,1) 经浏览器规范化
+    // 首次跨行点击 marker 时它还是 CSS ::before（非 DOM）；本用例只模拟
+    // caret 落到 (li,0) 的分支，真实 Chromium 还可能落在正文文本开头。
+    // 注入 span 后的粗粒度 nudge (li,1) 经浏览器规范化
     // 落在句号后——点击的精确坐标丢失（用户实测：第一次点击 caret 不落
     // 点击处，要点的第二次才准）。契约：mousedown 坐标被记录，span 注入
     // 后经 caretPositionFromPoint 还原精确偏移
@@ -1121,7 +1122,7 @@ describe('list-marker: live marker in ir mode (IE, #12)', { skip: DIST_READY ? f
         return sp ? { offsetNode: sp.firstChild, offset: 1 } : null;
       };
 
-      // 模拟 mousedown 记录坐标 + caret 落 (li,0)（浏览器对 ::before 的唯一可放位置）
+      // 模拟 mousedown 记录坐标 + caret 落 (li,0)；真实点击见 test/browser
       d.dispatchEvent(new w.MouseEvent('mousedown', { bubbles: true, clientX: 100, clientY: 80 }));
       setCaret(w, d, lis[0], 0);
       await sleep(60);

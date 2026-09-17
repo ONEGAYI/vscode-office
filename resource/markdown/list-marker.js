@@ -161,8 +161,11 @@
 
   function onMouseDownCapture(event) {
     if (!inEditorMode()) return;
-    if (event.button !== 0) return;
-    lastMarkerClick = { x: event.clientX, y: event.clientY, t: Date.now() };
+    lastMarkerClick = null;
+    if (event.button !== 0 || event.shiftKey) return;
+    var li = closestLi(event.target);
+    if (li && liveSpanOf(li)) return;
+    lastMarkerClick = { x: event.clientX, y: event.clientY, t: Date.now(), li: li };
   }
 
   function ensureLive(li) {
@@ -177,23 +180,18 @@
     var span = document.createElement('span');
     span.className = SPAN_CLASS;
     span.textContent = marker + '\u00A0';
-    // A caret parked at (li, 0) — the only place the browser can put it when
-    // clicking a marker that is still CSS-rendered (::before, not DOM) —
-    // would end up BEFORE the injected span, visually jumping to the
-    // marker's first character. If this activation came from a fresh
-    // mousedown, restore the EXACT click point via hit-testing now that the
-    // span occupies the marker area (the coarse (li,1) nudge below is the
-    // fallback: after browser normalization it lands after the delimiter,
-    // not where the user clicked — they'd have to click a second time).
+    // A CSS marker click can normalize to the first CONTENT text node, not
+    // just (li, 0). Resolve a fresh click on this item against the injected
+    // span in either case. A body click must retain its native selection.
     var sel = document.getSelection();
     var caretAtLiStart = sel && sel.rangeCount > 0
       && sel.anchorNode === li && sel.anchorOffset === 0;
     li.insertBefore(span, li.firstChild);
     li.classList.add(LI_LIVE_CLASS);
-    if (caretAtLiStart) {
+    var pt = lastMarkerClick;
+    lastMarkerClick = null;
+    if (caretAtLiStart || (pt && pt.li === li && sel && sel.isCollapsed)) {
       var placed = false;
-      var pt = lastMarkerClick;
-      lastMarkerClick = null;
       if (pt && Date.now() - pt.t < 600) {
         var doc = li.ownerDocument;
         var pos = null;
@@ -213,7 +211,7 @@
           placed = true;
         }
       }
-      if (!placed) {
+      if (!placed && caretAtLiStart) {
         var range = document.createRange();
         range.setStart(li, 1);
         range.collapse(true);

@@ -829,6 +829,7 @@
 		"lint:fix": "eslint \"src/**/*.{ts,tsx}\" --fix",
 		"test:unit": "node --test \"test/unit/*.test.ts\"",
 		"test:webview": "node --test \"test/webview/*.test.js\"",
+		"test:browser": "node --test \"test/browser/*.test.js\"",
 		"build": "vite build --mode=production",
 		"package": "vsce package --no-dependencies",
 		"publish": "vsce publish --no-dependencies && ovsx publish --no-dependencies",
