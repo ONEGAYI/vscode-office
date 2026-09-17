@@ -1,4 +1,5 @@
 import { pinOutlineActive } from "../outline/updateOutlineActive";
+import { buildOutlineStyleSnapshot, collectComputedStyleSource } from "../outline/styleSnapshot";
 import { closeMobileOutline, isEditorThemeMobileLayout } from "../ui/mobileOutlineMenu";
 import { codicon } from "../util/codicon";
 import { hasClosestByHeadings } from "../util/hasClosestByHeadings";
@@ -19,16 +20,25 @@ const escapeOutlineCodeHTML = (element: HTMLElement) => {
     return element;
 };
 
-const getOutlineHeadingHTML = (item: HTMLElement, vditor?: IVditor) => {
+/** 直通内容的纵深防御：剥离 on* 事件属性（编辑器 DOM 入口已过 Lute sanitize，此处仅兜底） */
+const stripEventAttributes = (element: HTMLElement) => {
+    element.querySelectorAll("*").forEach((node) => {
+        Array.from(node.attributes).forEach(({name}) => {
+            if (name.length > 2 && name.toLowerCase().startsWith("on")) {
+                node.removeAttribute(name);
+            }
+        });
+    });
+    return element;
+};
+
+/** 标题克隆（ir 剥离 marker/wbr）：innerHTML 作为条目直通内容，outerHTML 喂 Lute 生成结构 */
+const getOutlineHeadingClone = (item: HTMLElement, vditor?: IVditor) => {
     const clone = vditor?.currentMode === "ir" ? stripIrOutlineMarkers(item) : item.cloneNode(true) as HTMLElement;
     clone.querySelectorAll("wbr").forEach((node) => {
         node.remove();
     });
-    escapeOutlineCodeHTML(clone);
-    if (vditor?.currentMode === "ir") {
-        return clone.outerHTML;
-    }
-    return clone.outerHTML;
+    return clone;
 };
 
 export const OUTLINE_SCROLL_OFFSET = 15;
@@ -64,6 +74,13 @@ export const scrollOutlineTarget = (scrollElement: HTMLElement, idElement: HTMLE
 export const outlineRender = (contentElement: HTMLElement, targetElement: Element, vditor?: IVditor) => {
     let tocHTML = "";
     const ids: string[] = [];
+    // 条目内容（剥离 marker 的克隆 innerHTML）与元素级样式快照，与 ids 按下标对齐
+    const itemContents: string[] = [];
+    const styleSnapshots: string[] = [];
+    const canComputeStyles = !!vditor && typeof getComputedStyle === "function";
+    const baseStyleSource = canComputeStyles
+        ? collectComputedStyleSource(getComputedStyle(contentElement))
+        : null;
     Array.from(contentElement.children).forEach((item: HTMLElement, index: number) => {
         if (hasClosestByHeadings(item)) {
             if (vditor) {
@@ -75,7 +92,20 @@ export const outlineRender = (contentElement: HTMLElement, targetElement: Elemen
                 }
             }
             ids.push(item.id);
-            tocHTML += getOutlineHeadingHTML(item, vditor);
+            const clone = getOutlineHeadingClone(item, vditor);
+            // 直通内容不经 Lute 往返：innerHTML 赋值自带一次实体解析，不预转义（否则 & 双重转义）
+            itemContents.push(stripEventAttributes(clone).innerHTML);
+            // 喂 Lute 的路径需对 code 内 & 预转义，补偿 Lute 往返的一次反转义（基线行为）
+            tocHTML += escapeOutlineCodeHTML(clone).outerHTML;
+            // 偏差式透传：标题被 CSS 控制时仅注入与编辑器根不同的属性（font-size 恒不透传）
+            if (baseStyleSource) {
+                styleSnapshots.push(buildOutlineStyleSnapshot(
+                    collectComputedStyleSource(getComputedStyle(item)),
+                    baseStyleSource,
+                ));
+            } else {
+                styleSnapshots.push("");
+            }
         }
     });
     if (tocHTML === "") {
@@ -103,12 +133,21 @@ export const outlineRender = (contentElement: HTMLElement, targetElement: Elemen
         return "";
     }
     const headingsElement = tocRoot.querySelectorAll("li > span[data-target-id]");
+    // Lute 的 ToC 输出与标题数对齐时，条目内容以克隆为准（ir 路径 Lute 会丢弃 <s> 等行内标签）
+    const useClonedContents = headingsElement.length === itemContents.length;
     headingsElement.forEach((item, index) => {
         if (item.nextElementSibling && item.nextElementSibling.tagName === "UL") {
             const iconHTML = codicon("chevron-down", "vditor-outline__action");
             item.innerHTML = `${iconHTML}<span>${item.innerHTML}</span>`;
         } else {
             item.innerHTML = `<span class="vditor-outline__placeholder" aria-hidden="true"></span><span>${item.innerHTML}</span>`;
+        }
+        const contentSpan = item.lastElementChild;
+        if (useClonedContents && contentSpan) {
+            contentSpan.innerHTML = itemContents[index];
+            if (styleSnapshots[index]) {
+                contentSpan.setAttribute("style", styleSnapshots[index]);
+            }
         }
         item.setAttribute("data-target-id", ids[index]);
     });

@@ -721,6 +721,73 @@
       }
     }
 
+    // 大纲拖拽重排：源行半透明 + 上/下落点指示线
+    li>span[data-target-id] {
+      cursor: grab;
+    }
+
+    li>span.vditor-outline__item--dragging {
+      opacity: 0.45;
+    }
+
+    li>span.vditor-outline__item--drop-above,
+    li>span.vditor-outline__item--drop-below {
+      position: relative;
+
+      &::before,
+      &::after {
+        content: "";
+        position: absolute;
+        left: 2px;
+        right: 2px;
+        height: 2px;
+        border-radius: 1px;
+        background-color: var(--toolbar-icon-hover-color);
+        pointer-events: none;
+      }
+    }
+
+    li>span.vditor-outline__item--drop-above::before {
+      top: -2px;
+    }
+
+    li>span.vditor-outline__item--drop-below::after {
+      bottom: -2px;
+    }
+
+    // 大纲条目行内格式透传：对齐编辑器正文行内元素外观（条目自身层级字号体系不受影响）
+    li>span>span {
+      strong,
+      b {
+        color: var(--bold-color);
+      }
+
+      em,
+      i {
+        color: var(--italic-color);
+      }
+
+      code {
+        padding: 0.1em 0.3em;
+        margin: 0;
+        font-size: 85%;
+        border-radius: 3px;
+        font-family: var(--code-font-family);
+        background-color: var(--code-bg-color, transparent);
+        color: var(--code-fg-color, inherit);
+      }
+
+      a {
+        color: var(--link-color, @blurColor);
+        text-decoration: none;
+      }
+
+      s,
+      del {
+        text-decoration: line-through;
+      }
+    }
+
     li>span:hover .vditor-outline__action {
       opacity: 0.95;
     }
