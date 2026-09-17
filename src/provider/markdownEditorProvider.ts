@@ -18,6 +18,7 @@ import {
     normalizeDiskText,
     shouldAskAboutDiskChange,
 } from '../service/markdown/externalChangeGuard';
+import { preserveTableFormat } from '../service/markdown/tableFormatPreserver';
 import {
     clearDeletedNotified,
     collectPanelBufferTexts,
@@ -235,9 +236,16 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             }
             const nextContent = pendingDocumentSync;
             pendingDocumentSync = undefined;
-            rememberBufferText(document.getText().replace(/\r/g, ''));
-            content = nextContent;
-            await this.updateTextDocument(document, nextContent);
+            const oldText = document.getText().replace(/\r/g, '');
+            rememberBufferText(oldText);
+            // 表格格式保鲜：表格 DOM 不携带原文格式，Lute 序列化按列宽重排未编辑
+            // 表格的分隔行与空格（ir/wysiwyg 两套稳态互不为不动点）。内容骨架未变
+            // 的表格还原为文档当前原文，避免无关 diff 静默弄脏工作区；见
+            // tableFormatPreserver.ts 头注释。content 必须与落盘文本一致（磁盘
+            // 变更 echo 检查依赖）
+            const preserved = preserveTableFormat(oldText, nextContent);
+            content = preserved;
+            await this.updateTextDocument(document, preserved);
         };
         const scheduleDocumentSync = (newContent: string) => {
             pendingDocumentSync = newContent;
