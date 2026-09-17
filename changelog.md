@@ -1,5 +1,20 @@
 # Change log
 
+# 4.3.0-fork.2 2026-9-18
+
+本版重点：修复 Markdown 表格被保存静默重排弄脏 git 工作区的问题——未编辑的表格在保存时字节级保留原文格式。一并承载 fork.1 之后合入的编辑器增强与系列修复。
+
+Markdown 编辑器：
+
+- 修复：未编辑的表格不再被保存静默重排（分隔行横线数、单元格空格、表格邻接空行字节级保留；编辑过的表格才接受格式规范化）——fork PR #18
+- 新增：选中文件可直接作为纯文本比较（不依赖文件类型），编辑器切换后对照视图保留——fork PR #17
+- 修复：列表 marker 聚焦编辑的提交与折叠通道（Enter/Space/Tab 全管线提交、Escape 放弃、点别处提交；空列表项恢复原生键入与删除）——fork PR #14
+- 修复：列表切换的幂等取消不再向前吸并相邻段落——fork PR #13
+- 修复：跨行首次点击列表序号的光标定位——fork PR #16
+- 修复：工具栏样式操作后保留文本选区（加粗、斜体、行内代码等不再丢失选区）——提交 568e1b5
+- 修复：大纲条目不再呈半粗体（元素字重不透传，行内真实加粗保留）——fork PR #9
+- 新增：外部 CSS 叠加层，`~/.vscode-office-css/` 目录热加载，Settings 面板与命令面板双入口——fork PR #8
+
 # 4.3.0-fork.1 2026-9-17
 
 首个 fork 版本，基于上游 [cweijan/vscode-office](https://github.com/cweijan/vscode-office) 4.2.0。以下为 fork 相对上游的全部增强；安装包以 vsix 形式发布于本 fork 的 GitHub Release（扩展 ID 为 `ONEGAYI.vscode-office`，可与市场版并存）。
@@ -902,3 +917,4 @@ Other:
 <!-- 变更链接：fork 版本线 -->
 
 [4.3.0-fork.1]: https://github.com/ONEGAYI/vscode-office/commits/v4.3.0-fork.1
+[4.3.0-fork.2]: https://github.com/ONEGAYI/vscode-office/compare/v4.3.0-fork.1...v4.3.0-fork.2
