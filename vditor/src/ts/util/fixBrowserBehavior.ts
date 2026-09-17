@@ -395,13 +395,28 @@ const batchToggleList = (vditor: IVditor, range: Range, type: string): boolean =
     // 同一视觉位置有多种等价 Range 表达，不推进会使零交集的前一块被卷入
     // 批量转换（fork issue #10）。end 侧不做对称回退：端点 ≡ 后块绝对起点
     // 时按"选入该块"处理，与既有批量契约一致（跨块选区的测试辅助会把
-    // end 深入到目标块首子元素 @0）
+    // end 深入到目标块内部）
     if (startIndex !== endIndex) {
         const probe = startBlock.ownerDocument.createRange();
-        probe.selectNodeContents(startBlock);
-        probe.setStart(range.startContainer, range.startOffset);
-        if (probe.toString().replace(new RegExp(Constants.ZWSP, "g"), "").length === 0 && startIndex + 1 <= endIndex) {
-            startIndex += 1;
+        try {
+            probe.selectNodeContents(startBlock);
+            probe.setStart(range.startContainer, range.startOffset);
+            if (probe.toString().replace(new RegExp(Constants.ZWSP, "g"), "").length === 0
+                && startIndex + 1 <= endIndex) {
+                startIndex += 1;
+                // 同步推进 range 起点：零交集的前块只是等价位置表达，选区
+                // 的真实归属是下一块——推进后塌缩为单块返回 false 时，调用
+                // 方单块路径的 blockElement/itemElement 解析（锚定
+                // startContainer）才能命中用户实际选中的块
+                let node: Node = blocks[startIndex];
+                while (node.nodeType === 1 && node.firstChild) {
+                    node = node.firstChild;
+                }
+                range.setStart(node.nodeType === 3 ? node : blocks[startIndex], 0);
+            }
+        } catch {
+            // 陈旧 range 的 offset 可能越界（IndexSizeError），按非零交集
+            // 处理，不推进
         }
     }
     // 单块选区（含收缩后等价单块）交单块路径处理；批量分支的转换模板与

@@ -667,6 +667,40 @@ describe('list-ops: idempotent cancel & boundary endpoints (G, #10)', { skip: DI
     }
   });
 
+  it('G6: start 零交集且推进后等价单块 → 转换用户实际选中的下一块（F1）', async () => {
+    // 审查发现 F1：start 端点表达在前块末尾（零交集）、end 在紧邻下一块
+    // 内部时，批量分支推进 startIndex 后塌缩为单块返回 false——单块路径
+    // 的 blockElement/itemElement 解析锚定 range.startContainer，若 range
+    // 未同步推进，会转换零交集的前块而非用户实际选中的下一块
+    const t = await boot(MD_IDEM);
+    try {
+      const [pre, one, two] = paras(t);
+      const { window, document } = t;
+      const sel = window.getSelection();
+      const range = document.createRange();
+      // start 表达在 pre 文本末尾（与 one 开头视觉等价），end 在 one 内部
+      range.setStart(deepestFirstChild(pre), pre.textContent.length);
+      range.setEnd(deepestFirstChild(one), 2);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      document.dispatchEvent(new window.Event('selectionchange'));
+
+      clickToolbar(t, 'list');
+      await settle();
+
+      const reset = resetEl(t);
+      const ps = Array.from(reset.querySelectorAll('p[data-block="0"]'))
+        .map((p) => p.textContent.trim());
+      assert.deepEqual(ps, ['pre', 'two'], 'pre 零交集不转换，two 未选中不动');
+      const ul = reset.querySelector('ul');
+      assert.ok(ul, 'one（用户实际选中的块）应转列表');
+      assert.equal(ul.querySelectorAll(':scope > li').length, 1);
+      assert.match(ul.querySelector('li').textContent, /one/);
+    } finally {
+      t.window.close();
+    }
+  });
+
   it('G5: ir 模式两段设列表后再次触发 → 幂等取消，前段不被吸并', async () => {
     const t = await boot(MD_IDEM, { mode: 'ir' });
     try {

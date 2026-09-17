@@ -48,6 +48,11 @@ export const locateTextOffset = (
 
     const total = totalTextLength(lengths);
     const target = Math.min(Math.max(offset, 0), total);
+    if (Number.isNaN(target)) {
+        // 非法偏移（NaN 经 clamp 传播）：与旧契约一致返回 null 交调用方兜底，
+        // 而非静默归末节点末尾
+        return null;
+    }
 
     let prefix = 0;
     for (let i = 0; i < lengths.length; i++) {
