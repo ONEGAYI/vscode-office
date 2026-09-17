@@ -1,12 +1,13 @@
 /**
- * Live list markers (Obsidian-style focus editing) for WYSIWYG mode.
+ * Live list markers (Obsidian-style focus editing) for WYSIWYG and IR modes.
  *
  * Ported from vscode-markdown-editor-hardened `media-src/src/list-marker.ts`
- * (fork issue #1). Rendering state: vditor draws ordered/unordered markers
- * via the browser's native list rendering, so the numbers/bullets are
- * invisible to the caret — there is no way to edit "1." into "5.". This
- * module makes the marker of the caret's list line a REAL text node while
- * that line is focused:
+ * (fork issue #1; IR support added in fork issue #12 — the two modes share
+ * the same list DOM model, see test/webview/list-marker.test.js IL group).
+ * Rendering state: vditor draws ordered/unordered markers via the browser's
+ * native list rendering, so the numbers/bullets are invisible to the caret —
+ * there is no way to edit "1." into "5.". This module makes the marker of
+ * the caret's list line a REAL text node while that line is focused:
  *
  *   <li data-marker="1." class="vmd-marker-live">
  *     <span class="vmd-li-marker">1.&nbsp;</span>first
@@ -15,21 +16,23 @@
  * and swaps back to the CSS-rendered marker (::before with attr(data-marker),
  * see index.css) as soon as the caret leaves the line.
  *
- * Hard constraint (probed on this fork's Lute): marker-looking text inside a
- * li ("5. ", "- ") never survives as markup — the engine strips the span and
- * glues its text into the li content. So the span must never be part of any
- * HTML handed to Lute. Two defenses make that impossible:
- *   - SpinVditorDOM / VditorDOM2Md are wrapped (monkey-patched on
- *     vditor.vditor.lute) to strip every marker span out of the input and
- *     fold its value into the li/ol data-marker (+ol start) attributes first.
+ * Hard constraint (probed on this fork's Lute, both SpinVditorDOM and
+ * SpinVditorIRDOM): marker-looking text inside a li ("5. ", "- ") never
+ * survives as markup — the engine strips the span and glues its text into
+ * the li content. So the span must never be part of any HTML handed to
+ * Lute. Two defenses make that impossible:
+ *   - SpinVditorDOM / SpinVditorIRDOM / VditorDOM2Md are wrapped
+ *     (monkey-patched on vditor.vditor.lute) to strip every marker span out
+ *     of the input and fold its value into the li/ol data-marker (+ol start)
+ *     attributes first.
  *   - the span is proactively removed (value folded into attributes) before
  *     we hand control back to vditor's own input pipeline.
  *
  * Lute's marker authority rules (fenced by test/webview/list-marker.test.js
- * L1-L5): ordered numbering follows the OL's data-marker/start (so the first
- * li's edit must sync the ol), unordered follows the FIRST li's data-marker
- * (spin follows it by itself). Emptying the marker lifts the li out of the
- * list into a paragraph.
+ * L1-L5 / IL0-IL6): ordered numbering follows the OL's data-marker/start (so
+ * the first li's edit must sync the ol), unordered follows the FIRST li's
+ * data-marker (spin follows it by itself). Emptying the marker lifts the li
+ * out of the list into a paragraph.
  *
  * Wiring (see resource/markdown/index.html + index.js):
  *   <script src="list-marker.js"></script>  then  ListMarkerLive.install(editor)
@@ -68,14 +71,17 @@
   /** 当前面板的编辑器实例（每个 webview 面板仅一个，after() 时安装） */
   var currentEditor = null;
 
+  /** 当前模式（wysiwyg/ir）的编辑面：两模式共用 listToggle 与同一套列表
+   *  DOM/属性模型（IL0），marker 编辑在 ir 下同样生效（#12） */
   function editorEl() {
     var v = currentEditor && currentEditor.vditor;
-    return v && v.wysiwyg ? v.wysiwyg.element : null;
+    if (!v || (v.currentMode !== 'wysiwyg' && v.currentMode !== 'ir')) return null;
+    return v[v.currentMode] ? v[v.currentMode].element : null;
   }
 
-  function inWysiwyg() {
+  function inEditorMode() {
     return !!(currentEditor && currentEditor.vditor
-      && currentEditor.vditor.currentMode === 'wysiwyg' && editorEl());
+      && editorEl());
   }
 
   /** Marker validity per list type; null = keep the li's current data-marker. */
@@ -197,7 +203,7 @@
   }
 
   function onSelectionChange() {
-    if (!inWysiwyg()) return;
+    if (!inEditorMode()) return;
     var editor = editorEl();
 
     var sel = document.getSelection();
@@ -264,7 +270,21 @@
     while (li.firstChild) p.appendChild(li.firstChild);
     var wbr = document.createElement('wbr');
     p.insertBefore(wbr, p.firstChild);
-    li.replaceWith(p);
+    // p 必须落在列表外：ul/ol 的直接 p 子元素是无效结构，ir 的 Lute 会
+    // 把它解析成上一项的懒续行（"- alpha\n  beta"）。唯一项时整个列表
+    // 换成段落；多项时 p 放列表尾之后（中间项升格后位置后移——已知
+    // 限制，与 wysiwyg 共享此行为）
+    var list = li.parentElement;
+    if (list && (list.tagName === 'UL' || list.tagName === 'OL')) {
+      if (list.children.length === 1) {
+        list.replaceWith(p);
+      } else {
+        list.insertAdjacentElement('afterend', p);
+        li.remove();
+      }
+    } else {
+      li.replaceWith(p);
+    }
 
     var sel = document.getSelection();
     var range = document.createRange();
@@ -287,7 +307,7 @@
   function onInputCapture(event) {
     // IME composition 期间不拦截：拦截会销毁 composition 会话（丢字/错位）
     if (event.isComposing) return;
-    if (!inWysiwyg()) return;
+    if (!inEditorMode()) return;
     var span = caretSpan();
     if (!span) return;
     // Caret is inside the marker span: swallow this event (vditor's handler
@@ -305,7 +325,7 @@
     // IME composition 期间不拦截（含候选确认的 Enter），与 fork 自身
     // processKeydown 的 isComposing 防护同级
     if (event.isComposing) return;
-    if (!inWysiwyg()) return;
+    if (!inEditorMode()) return;
     var sel = document.getSelection();
     if (!sel || sel.rangeCount === 0) return;
 
@@ -394,7 +414,9 @@
   function wrapLute() {
     var lute = currentEditor && currentEditor.vditor && currentEditor.vditor.lute;
     if (!lute || lute[WRAP_FLAG]) return;
-    var methods = ['SpinVditorDOM', 'VditorDOM2Md'];
+    // VditorIRDOM2Md 不能少：ir 的 getValue（getMarkdown）走它序列化，
+    // 缺了这条门 span 会直接进 Lute、文本被粘进 li 内容（#12）
+    var methods = ['SpinVditorDOM', 'SpinVditorIRDOM', 'VditorDOM2Md', 'VditorIRDOM2Md'];
     for (var i = 0; i < methods.length; i++) {
       (function (name) {
         var orig = lute[name];

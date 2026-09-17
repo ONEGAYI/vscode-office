@@ -22,7 +22,7 @@
  * 前置：需先构建 vditor 子包（vditor/dist 不入库）。未构建时整组跳过。
  */
 
-const { describe, it, before } = require('node:test');
+const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -143,6 +143,89 @@ async function boot(content) {
   throw new Error('editor did not boot; page errors: ' + pageErrors.join(' | ').slice(0, 2000));
 }
 
+/** ir 模式 boot（#11 探针结论：ir 的 li DOM/属性模型与 wysiwyg 一致） */
+async function bootIR(content) {
+  const virtualConsole = new VirtualConsole();
+  const pageErrors = [];
+  virtualConsole.on('jsdomError', (err) => pageErrors.push(String(err)));
+
+  const dom = new JSDOM('<!DOCTYPE html><html><head></head><body><div id="app"></div></body></html>', {
+    runScripts: 'dangerously',
+    resources: 'usable',
+    url: fileUrl(path.join(ROOT, '__list-marker-ir-test__.html')),
+    pretendToBeVisual: true,
+    virtualConsole,
+  });
+  const { window } = dom;
+  const { document } = window;
+  window.TextDecoder = TextDecoder;
+  window.TextEncoder = TextEncoder;
+  window.crypto = webcrypto;
+  if (typeof window.fetch === 'undefined') {
+    window.fetch = () => Promise.reject(new Error('fetch stub'));
+  }
+  if (typeof document.execCommand !== 'function') {
+    document.execCommand = function () { return true; };
+  }
+  if (!('innerText' in window.HTMLElement.prototype)) {
+    Object.defineProperty(window.HTMLElement.prototype, 'innerText', {
+      configurable: true,
+      get() { return this.textContent; },
+      set(v) { this.textContent = v; },
+    });
+  }
+  window.HTMLElement.prototype.scrollIntoView = function () { };
+  window.IntersectionObserver = class {
+    constructor() { }
+    observe() { }
+    unobserve() { }
+    disconnect() { }
+    takeRecords() { return []; }
+  };
+  window.matchMedia = window.matchMedia || ((q) => ({
+    matches: false, media: q, onchange: null,
+    addListener() { }, removeListener() { },
+    addEventListener() { }, removeEventListener() { },
+    dispatchEvent() { return false; },
+  }));
+  window.eval(fs.readFileSync(path.join(DIST, 'js', 'lute', 'lute.min.js'), 'utf8'));
+  const stubScript = (id) => {
+    const s = document.createElement('script');
+    s.id = id;
+    document.head.appendChild(s);
+  };
+  stubScript('vditorLuteScript');
+  window.eval(fs.readFileSync(path.join(DIST, 'js', 'i18n', 'en_US.js'), 'utf8'));
+  const i18n = window.VditorI18n;
+  window.eval(fs.readFileSync(path.join(DIST, 'index.min.js'), 'utf8'));
+  if (typeof window.Vditor === 'undefined') {
+    throw new Error('Vditor did not load');
+  }
+
+  let booted = false;
+  window.vditor = new window.Vditor('app', {
+    value: content,
+    mode: 'ir',
+    lang: 'en_US',
+    i18n,
+    cdn: fileUrl(path.join(ROOT, 'vditor')),
+    height: '600px',
+    cache: { enable: false },
+    toolbar: [],
+    after() { booted = true; },
+  });
+
+  for (let i = 0; i < 60; i++) {
+    await sleep(250);
+    if (booted
+      && window.vditor.getCurrentMode && window.vditor.getCurrentMode() === 'ir'
+      && document.querySelector('.vditor-ir .vditor-reset')) {
+      return { window, document };
+    }
+  }
+  throw new Error('editor did not boot; page errors: ' + pageErrors.join(' | ').slice(0, 2000));
+}
+
 /** 将光标放进文本节点的 offset 处并通知 selectionchange（jsdom 不会自动派发） */
 function setCaret(window, document, node, offset) {
   const sel = window.getSelection();
@@ -219,6 +302,72 @@ describe('list-marker: Lute engine semantics fence (R/L)', { skip: DIST_READY ? 
     const lute = ctx.window.vditor.vditor.lute;
     const sep = lute.VditorDOM2Md(lute.Md2VditorDOM('1. a\n\n5) five\n'));
     assert.equal(sep, '1. a\n\n5) five\n');
+  });
+});
+
+// ── IL：Lute 引擎语义栅栏（ir 变体，#11 探针） ──────────────────────────
+// 探针结论（jsdom + 当前构建实测）：ir 的 li DOM/属性模型与 wysiwyg 完全
+// 一致（li 带 data-marker="1." / "-"，ol/ul 带 data-marker），marker 的
+// spin 语义（跟随/编号权威/序列化）在 SpinVditorIRDOM 上同样成立；
+// marker span 进 IR spin 同样被吞、文本粘进 li 内容（Lute 门必须覆盖
+// SpinVditorIRDOM）。以下契约是 ir list marker 编辑（#12）的引擎前置
+
+describe('list-marker: Lute IR semantics fence (IL, #11)', { skip: DIST_READY ? false : 'vditor/dist 未构建：先在 vditor/ 目录执行构建' }, () => {
+  let ctx;
+  before(async () => {
+    ctx = await bootIR(MD);
+  });
+
+  after(() => {
+    ctx.window.close();
+  });
+
+  it('IL0: ir 模式 li 的 data-marker 与 wysiwyg 同构', () => {
+    const reset = ctx.document.querySelector('.vditor-ir .vditor-reset');
+    const ol = reset.querySelector('ol');
+    assert.equal(ol.getAttribute('data-marker'), '1.', 'ol data-marker 应与 wysiwyg 同构');
+    const markers = Array.from(reset.querySelectorAll('li')).map((li) => li.getAttribute('data-marker'));
+    assert.deepEqual(markers, ['1.', '2.', '-', '-']);
+  });
+
+  it('IL1: SpinVditorIRDOM is a function（Lute 门需覆盖）', () => {
+    const lute = ctx.window.vditor.vditor.lute;
+    assert.equal(typeof lute.SpinVditorIRDOM, 'function');
+  });
+
+  it('IL2: 无序 first-li marker 改写被 IR spin 跟随', () => {
+    const lute = ctx.window.vditor.vditor.lute;
+    const uFollow = lute.SpinVditorIRDOM('<ul data-block="0" data-marker="-"><li data-marker="*">a</li></ul>');
+    assert.match(uFollow, /<ul[^>]*data-marker="\*/);
+    assert.match(uFollow, /<li[^>]*data-marker="\*/);
+  });
+
+  it('IL3: 有序编号权威（start + data-marker）在 IR spin 保留', () => {
+    const lute = ctx.window.vditor.vditor.lute;
+    const oKeep = lute.SpinVditorIRDOM('<ol data-block="0" start="5" data-marker="5."><li data-marker="5.">five</li><li data-marker="6.">six</li></ol>');
+    assert.match(oKeep, /start="5"/);
+    assert.match(oKeep, /data-marker="5\."/);
+  });
+
+  it('IL4: ir 现存列表 DOM 原样回灌稳定（round-trip）', () => {
+    const lute = ctx.window.vditor.vditor.lute;
+    const ol = ctx.document.querySelector('.vditor-ir .vditor-reset ol');
+    const round = lute.SpinVditorIRDOM(ol.outerHTML);
+    assert.match(round, /<ol[^>]*data-marker="1\."/);
+    assert.equal((round.match(/<li/g) || []).length, 2);
+  });
+
+  it('IL5: 编号改写经 VditorDOM2Md 序列化为起始编号', () => {
+    const lute = ctx.window.vditor.vditor.lute;
+    const md = lute.VditorDOM2Md('<ol data-block="0" start="5" data-marker="5."><li data-marker="5.">a</li></ol>');
+    assert.equal(md, '5. a\n');
+  });
+
+  it('IL6: marker span 进 IR spin 被吞——文本粘进 li 内容（硬约束不变）', () => {
+    const lute = ctx.window.vditor.vditor.lute;
+    const span = lute.SpinVditorIRDOM('<ul data-block="0" data-marker="-"><li data-marker="-"><span class="vmd-li-marker">*\u00A0</span>alpha</li></ul>');
+    assert.ok(!span.includes('vmd-li-marker'), 'span 不得存活于 IR spin 输出');
+    assert.match(span, />.?\*?\u00A0?alpha</, 'span 文本被粘进 li 内容');
   });
 });
 
@@ -523,6 +672,136 @@ describe('list-marker: live marker module contract (G/E/U)', { skip: DIST_READY 
       assert.ok(!v.includes('\u00A0'), 'nbsp leaked into undo-restored markdown');
     } finally {
       b2.window.close();
+    }
+  });
+});
+
+// ── IE：模块行为契约（ir 变体，#12） ────────────────────────────────────
+// 与 G/E/U 组同源的场景在 ir 模式重跑：live 激活 / 换行清扫 / 重编号 /
+// 升格 / undo 干净度。#11 探针已证 ir 与 wysiwyg 的列表 DOM 模型一致，
+// 此组验证模块的 mode 守卫与 Lute 门（SpinVditorIRDOM）在 ir 管线生效
+
+describe('list-marker: live marker in ir mode (IE, #12)', { skip: DIST_READY ? false : 'vditor/dist 未构建：先在 vditor/ 目录执行构建' }, () => {
+  let ctx;
+  before(async () => {
+    ctx = await bootIR(MD);
+    ctx.window.eval(fs.readFileSync(MODULE_PATH, 'utf8'));
+    ctx.window.ListMarkerLive.install(ctx.window.vditor);
+  });
+
+  after(() => {
+    ctx.window.close();
+  });
+
+  const editorElIR = (doc) =>
+    doc.querySelector('.vditor-ir .vditor-reset') || doc.querySelector('.vditor-ir');
+
+  it('IE1: ir 光标进列表行 → live span 激活', async () => {
+    const { window, document } = ctx;
+    const li = document.querySelector('.vditor-ir ol li');
+    setCaret(window, document, li.firstChild, 2);
+    await sleep(60);
+    const span = liveSpan(document, li);
+    assert.ok(span, 'ir 模式未激活 live span');
+    assert.equal(span.textContent, '1.\u00A0');
+    assert.ok(li.classList.contains('vmd-marker-live'));
+  });
+
+  it('IE2: ir 光标换行清扫旧 span', async () => {
+    const { window, document } = ctx;
+    const firstLi = document.querySelector('.vditor-ir ol li');
+    const secondLi = document.querySelectorAll('.vditor-ir ol li')[1];
+    setCaret(window, document, secondLi.firstChild, 2);
+    await sleep(60);
+    assert.ok(!liveSpan(document, firstLi), 'ir 上一行残留 stale span');
+    const s2 = liveSpan(document, secondLi);
+    assert.ok(s2, 'ir 新行无 span');
+    assert.equal(s2.textContent, '2.\u00A0');
+  });
+
+  it('IE3: ir 编辑 "1." → "5." 重编号（markdown + DOM，无 span 泄漏）', async () => {
+    const { window, document } = ctx;
+    const li = document.querySelector('.vditor-ir ol li');
+    setCaret(window, document, li.firstChild, 2);
+    await sleep(60);
+    const span = liveSpan(document, li);
+    assert.ok(span, 'no live span in ir');
+    span.textContent = '5.\u00A0';
+    setCaret(window, document, span.firstChild, span.firstChild.textContent.length);
+    fireInput(window, editorElIR(document));
+    await sleep(600);
+    const value = window.vditor.getValue();
+    assert.ok(value.startsWith('5. first'), JSON.stringify(value));
+    assert.ok(value.includes('6. second'), JSON.stringify(value));
+    assert.ok(!value.includes('vmd-li-marker'), 'span 泄漏进 ir markdown');
+    assert.ok(!value.includes('\u00A0'), 'nbsp 泄漏进 ir markdown');
+  });
+
+  it('IE4: ir 清空 marker 升格出列表', async () => {
+    const { window, document } = ctx;
+    const beta = Array.from(document.querySelectorAll('.vditor-ir ul li')).pop();
+    setCaret(window, document, beta.firstChild, 2);
+    await sleep(60);
+    const span = liveSpan(document, beta);
+    assert.ok(span, 'no live span in ir');
+    span.textContent = '';
+    setCaret(window, document, beta, 0);
+    fireKey(window, document, 'Backspace');
+    await sleep(600);
+    const value = window.vditor.getValue();
+    assert.match(value, /(^|\n)beta/, JSON.stringify(value));
+    assert.doesNotMatch(value, /[-*] beta/, JSON.stringify(value));
+  });
+
+  it('IE5: ir marker 编辑进 undo 栈，恢复快照无泄漏', async () => {
+    // ir 模式 boot 无初始 undo 快照（undoStack.length === 0，与 wysiwyg 的
+    // 初始化差异）：先做一次普通编辑建立栈基线，undo 一次应回滚 marker
+    // 编辑而保留普通编辑（与 U0-U2 同构）
+    const MD_IE = '1. first\n2. second\n\npara\n';
+    const MD_IE_TYPED = '1. first\n2. second\n\nparaX\n';
+    const b5 = await bootIR(MD_IE);
+    const { window: w, document: d } = b5;
+    try {
+      w.eval(fs.readFileSync(MODULE_PATH, 'utf8'));
+      w.ListMarkerLive.install(w.vditor);
+
+      // 1) 普通编辑建立栈基线
+      const para = d.querySelector('.vditor-ir p[data-block="0"]');
+      assert.ok(para, 'no paragraph in ir');
+      para.firstChild.textContent = 'paraX';
+      const setCaretIE = (node, offset) => {
+        const sel = w.getSelection();
+        const range = d.createRange();
+        range.setStart(node, offset);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        d.dispatchEvent(new w.Event('selectionchange'));
+      };
+      setCaretIE(para.firstChild, 5);
+      editorElIR(d).dispatchEvent(new w.InputEvent('input', { bubbles: true, inputType: 'insertText', data: 'X' }));
+      await sleep(1200);
+
+      // 2) marker 编辑：1. → 7.
+      const li = d.querySelector('.vditor-ir ol li');
+      setCaretIE(li.firstChild, 2);
+      await sleep(60);
+      const span = liveSpan(d, li);
+      assert.ok(span, 'no live span in ir');
+      span.textContent = '7.\u00A0';
+      setCaretIE(span.firstChild, span.firstChild.textContent.length);
+      editorElIR(d).dispatchEvent(new w.InputEvent('input', { bubbles: true, inputType: 'insertText', data: 'x' }));
+      await sleep(1200);
+      assert.ok(w.vditor.getValue().startsWith('7. first'), 'ir renumber not applied');
+
+      w.vditor.vditor.undo.undo(w.vditor.vditor);
+      await sleep(300);
+      const v = w.vditor.getValue();
+      assert.equal(v, MD_IE_TYPED, JSON.stringify(v));
+      assert.ok(!v.includes('vmd-li-marker'), 'span 泄漏进 ir undo 恢复');
+      assert.ok(!v.includes('\u00A0'), 'nbsp 泄漏进 ir undo 恢复');
+    } finally {
+      b5.window.close();
     }
   });
 });
