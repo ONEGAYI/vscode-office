@@ -170,6 +170,12 @@ describe('W. 接线契约', () => {
     const footerHtml = panel.split('buildSettingsFooterHTML')[1] ?? '';
     assert.ok(/data-open-css/.test(footerHtml), 'footer 有 custom CSS 按钮');
     assert.ok(/settingsOpenCss/.test(footerHtml), '按钮文案走 i18n key');
+    // 单独一行：入口按钮独占一个 footer 容器，不与编辑/重置挤同一行
+    const rows = footerHtml.split('</div>');
+    assert.ok(/data-open-css/.test(rows[0]) && !/data-edit-settings/.test(rows[0]),
+      'Custom CSS 独占第一行 footer 容器');
+    assert.ok(/data-edit-settings/.test(rows[1] ?? '') && /data-reset-settings/.test(rows[1] ?? ''),
+      '编辑/重置共处第二行');
 
     const settings = read(path.join(ROOT, 'vditor', 'src', 'ts', 'toolbar', 'Settings.ts'));
     assert.ok(/closest\("\[data-open-css\]"\)/.test(settings)

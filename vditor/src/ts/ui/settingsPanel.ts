@@ -276,11 +276,13 @@ export const buildAIModelsHTML = () => {
 
 export const buildSettingsFooterHTML = () => {
     const i18n = window.VditorI18n;
-    return `<div class="${SETTINGS_PANEL_CLASS}__footer">
+    return `<div class="${SETTINGS_PANEL_CLASS}__footer ${SETTINGS_PANEL_CLASS}__footer--extra">
             <button type="button" class="${SETTINGS_PANEL_CLASS}__footer-btn" data-open-css title="${i18n.settingsOpenCss ?? 'Custom CSS'}">
                 <span class="codicon codicon-folder-opened" aria-hidden="true"></span>
                 <span>${i18n.settingsOpenCss ?? 'Custom CSS'}</span>
             </button>
+        </div>
+        <div class="${SETTINGS_PANEL_CLASS}__footer">
             <button type="button" class="${SETTINGS_PANEL_CLASS}__footer-btn ${SETTINGS_PANEL_CLASS}__footer-btn--edit" data-edit-settings title="${i18n.settingsEditFile ?? i18n.edit}">
                 <span class="codicon codicon-edit" aria-hidden="true"></span>
                 <span>${i18n.settingsEditFile ?? i18n.edit}</span>
