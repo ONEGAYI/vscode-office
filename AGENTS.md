@@ -23,6 +23,7 @@
 - 根 `tsc --noEmit` 在 main 上即损坏（TS5070 配置错误），以 `npm run build` 作为编译门；eslint 只对改动文件执行
 - webview 行为验证：`vditor/dist` 可经本地 HTTP server + 探针页在真实浏览器中驱动（注意 stock vditor 的 CDN 拼接是 `{cdn}/dist/...`，cdn 参数指向 `vditor` 目录而非 `vditor/dist`）；探针文件验证完即删
 - dev 模式（F5）可运行的工作树需三件套：根 `node_modules`、`resource/markdown/dist`（vditor 子包构建）、`out/extension.js`（根 `npm run build`；`out/` 不进 git，新工作树默认没有）。交付新工作树供用户实测时三件齐备，否则注明缺什么
+- **扩展宿主集成探针（隔离 VSCode 实例）**：`--extensionTestsPath` 必须与 `--extensionDevelopmentPath` 成对给出（ext host 校验缺一即静默退出：exit 0、无输出、不开窗）；还必须给一个工作区文件夹参数，否则不开窗、测试永不执行；隔离实例配独立 `--user-data-dir` + `--extensions-dir` 防撞上已开实例。该模式下 extensionMode 是 Test(3) 而非 Development，要驱动 IS_DEV 分支需临时放宽 `ReactApp.init` 判定并重跑 build（改完源码忘 build = 无效轮次）。首跑引导压制（写进探针 profile 的 settings.json）：`workbench.startupEditor:none`、`workbench.welcome.enabled:false`、`--sync off`，Copilot 登录模态唯一根治项是 `"chat.disableAIFeatures": true`（welcome/sync/禁扩展均无效）。信号采集：测试结果写文件，ext host 的 console.log 不回 CLI stdout；`npm run build` 会 `rmSync` 整个 `out/`，build 后探针包必须重打。红绿判据：红 = 探针内直调 provider 拿到 promise reject，"编辑器 tab 存在"不构成绿（openWith 失败核心仍保留空白 tab）；连续无效轮次先 grep 核心 bundle（`resources/app/out`）定位约束，不要继续试参数
 
 ## 版本发布（fork Release）
 
