@@ -747,42 +747,40 @@ describe('list-marker: live marker in ir mode (IE, #12)', { skip: DIST_READY ? f
     }
   });
 
-  it('IE6: 空列表项聚焦后 caret 落 span 之后（内容区起点），不闪跳 marker 前', async () => {
+  it('IE6: 空列表项聚焦不激活 live span，caret 保留可输入位置', async () => {
     // 空 li 零子节点（<li data-marker="3."></li>），原生点击唯一落点
-    // 是 (li, 0)；ensureLive 把 marker span 插到 li 开头后，DOM 插入规则
-    // 使 caret 停在 span 之前——视觉上光标从点击处闪跳到 marker 首字符
-    // 前（用户实测场景）。契约：span 注入时把恰在 (li, 0) 的 caret 迁到
-    // span 之后（(li, 1) = 内容区起点），与"点击 marker 右侧输入内容"
-    // 的意图一致；进入 marker 编辑仍可左移一格
+    // 是 (li, 0)。若给空项注入 marker span，span 成为唯一子节点，浏览
+    // 器对元素间隙 caret 的规范化会把任何 li 内位置归一到 span 文本
+    // 里——打字进 span 被 input capture 吞掉（parseMarker 失败静默丢
+    // 弃，字符消失）、Backspace 被逐字符删 marker 而非删除整项（用户
+    // 实测：无法键入、空项删不掉）。契约：空内容项不 span 化，marker
+    // 保持 CSS 渲染，vditor 原生的"打字进内容 / Backspace 删项"路径完
+    // 全保留；有内容项不受影响（span 照常激活）
     const b6 = await bootIR('1. first\n2. second\n3. \n');
     const { window: w, document: d } = b6;
     try {
       w.eval(fs.readFileSync(MODULE_PATH, 'utf8'));
       w.ListMarkerLive.install(w.vditor);
 
-      const emptyLi = [...d.querySelectorAll('.vditor-ir ol li')]
-        .find((li) => (li.textContent || '').replace(/[\u200B\u00A0\s]/g, '') === '');
+      const lis = [...d.querySelectorAll('.vditor-ir ol li')];
+      const emptyLi = lis.find((li) => (li.textContent || '').replace(/[\u200B\u00A0\s]/g, '') === '');
       assert.ok(emptyLi, '空列表项未找到');
       assert.equal(emptyLi.childNodes.length, 0, '空项应零子节点（哨兵也不该有）');
 
-      // 点击空项 marker 右侧空白的程序化等价：原生落点 (li, 0)
+      // 点击空项（原生落点 (li, 0) 的程序化等价）
       setCaret(w, d, emptyLi, 0);
       await sleep(60);
 
-      const span = liveSpan(d, emptyLi);
-      assert.ok(span, '空项聚焦后应出现 live span');
-
+      assert.equal(liveSpan(d, emptyLi), null, '空项聚焦后不得出现 live span');
+      assert.equal(emptyLi.classList.contains('vmd-marker-live'), false, '空项不得挂 live 类');
       const sel = w.getSelection();
-      const inContent = sel.anchorNode === emptyLi
-        ? sel.anchorOffset >= 1
-        : (emptyLi.contains(sel.anchorNode) && !span.contains(sel.anchorNode));
-      assert.ok(inContent, `caret 应在 span 之后的内容区，实际 ${sel.anchorNode && sel.anchorNode.nodeName}@${sel.anchorOffset}`);
+      assert.ok(sel.anchorNode === emptyLi || emptyLi.contains(sel.anchorNode),
+        `caret 应留在空项内，实际 ${sel.anchorNode && sel.anchorNode.nodeName}@${sel.anchorOffset}`);
 
-      // 对照：离开行后 span 清除，caret 可停留在 li 上（clearLive 迁移）
-      const firstLi = d.querySelector('.vditor-ir ol li');
-      setCaret(w, d, firstLi.firstChild, 5);
+      // 对照：有内容项聚焦 span 照常激活
+      setCaret(w, d, lis[0].firstChild, 2);
       await sleep(60);
-      assert.equal(liveSpan(d, emptyLi), null, '离开空项后 span 应清除');
+      assert.ok(liveSpan(d, lis[0]), '有内容项聚焦应激活 live span');
     } finally {
       b6.window.close();
     }

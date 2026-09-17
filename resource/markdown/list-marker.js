@@ -127,16 +127,33 @@
     return li.querySelector(':scope > span.' + SPAN_CLASS);
   }
 
+  /** True when the li has any text of its own besides a possible live span. */
+  function hasOwnContent(li) {
+    var walker = li.ownerDocument.createTreeWalker(li, NodeFilter.SHOW_TEXT);
+    var n;
+    while ((n = walker.nextNode())) {
+      if (n.parentElement && n.parentElement.closest('.' + SPAN_CLASS)) continue;
+      if ((n.textContent || '').length > 0) return true;
+    }
+    return false;
+  }
+
   function ensureLive(li) {
     if (liveSpanOf(li)) return;
+    // An item with no content text must NOT get a span: it would be the li's
+    // only child, and the browser normalizes any caret inside the li into
+    // the span text — typing would land in the marker (swallowed by the
+    // input gate) and Backspace would edit the marker char-by-char instead
+    // of deleting the empty item. Keep vditor's native empty-item paths.
+    if (!hasOwnContent(li)) return;
     var marker = li.getAttribute('data-marker') || '';
     var span = document.createElement('span');
     span.className = SPAN_CLASS;
     span.textContent = marker + '\u00A0';
-    // A caret parked at (li, 0) — the only native landing point of an item
-    // with no content node — would end up BEFORE the injected span (the
-    // marker), visually jumping to the marker's first character. Nudge it
-    // past the span (the content start) instead.
+    // A caret parked at (li, 0) — e.g. a click on the line start of an item
+    // whose first child is a block wrapper — would end up BEFORE the injected
+    // span (the marker), visually jumping to the marker's first character.
+    // Nudge it past the span (the content start) instead.
     var sel = document.getSelection();
     var caretAtLiStart = sel && sel.rangeCount > 0
       && sel.anchorNode === li && sel.anchorOffset === 0;
