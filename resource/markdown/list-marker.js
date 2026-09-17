@@ -61,9 +61,11 @@
  *   - text pasted into the marker span that fails parseMarker is silently
  *     dropped (the marker keeps its previous value).
  *   - the first marker edit right after document load (~undoDelay, before
- *     the boot snapshot lands on the undo stack) is not undoable: undo
- *     needs ≥2 stack entries and this edit never adds one. Same in both
- *     modes; the window closes once the boot snapshot lands.
+ *     the boot snapshot lands on the undo stack) is not undoable: it clears
+ *     the pending boot-snapshot push and never captures a restorable
+ *     pre-edit snapshot (its own debounced push becomes stack entry #1),
+ *     so undo (needs ≥2 entries) stays a no-op. Same in both modes; the
+ *     window closes once the boot snapshot lands.
  */
 (function () {
   'use strict';

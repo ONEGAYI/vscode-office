@@ -639,6 +639,27 @@ describe('list-marker: live marker in ir mode (IE, #12)', { skip: DIST_READY ? f
     assert.equal(s2.textContent, '2.\u00A0');
   });
 
+  it('IE2b: Lute 门覆盖粘贴回灌与导出路径（fold 而非粘内容）', () => {
+    const lute = ctx.window.vditor.vditor.lute;
+    const withSpan = '<ul data-block="0" data-marker="-"><li data-marker="-"><span class="vmd-li-marker">*\u00A0</span>alpha</li></ul>';
+    // 区分门与引擎天然吞并：门先剥 span 并 fold 值进 data-marker，内容
+    // 保持 alpha；引擎天然吞并会把 "* " 粘进 li 内容（实测未包门输出
+    // 为 "* alpha" / "*** **alpha"）
+    ['HTML2VditorDOM', 'HTML2VditorIRDOM'].forEach((name) => {
+      if (typeof lute[name] !== 'function') return;
+      const out = String(lute[name](withSpan));
+      assert.ok(!out.includes('vmd-li-marker'), `${name} 输出不得含 marker span`);
+      assert.match(out, /data-marker="\*"/, `${name} 应把 span 值 fold 进 data-marker`);
+      assert.ok(!out.includes('*alpha'), `${name} 内容不得粘入 marker 文本`);
+    });
+    ['VditorDOM2HTML', 'VditorIRDOM2HTML'].forEach((name) => {
+      if (typeof lute[name] !== 'function') return;
+      const out = String(lute[name](withSpan));
+      assert.ok(!out.includes('vmd-li-marker'), `${name} 输出不得含 marker span`);
+      assert.ok(!/\*\s?alpha/.test(out), `${name} 内容不得粘入 marker 文本`);
+    });
+  });
+
   it('IE3: ir 编辑 "1." → "5." 重编号（markdown + DOM，无 span 泄漏）', async () => {
     const { window, document } = ctx;
     const li = document.querySelector('.vditor-ir ol li');
