@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import {
@@ -17,12 +17,32 @@ const readExportVars = (): Set<string> => {
     return new Set([...arrayBody.matchAll(/"(--[a-z0-9-]+)"/g)].map((m) => m[1]));
 };
 
-/** 提取主题基线 Auto.css 定义的自有变量（--vscode-* 是引用不算定义）。 */
-const readThemeVars = (): Set<string> => {
-    const css = readFileSync(join('vditor', 'src', 'css', 'editor-theme', 'Auto.css'), 'utf8');
-    return new Set([...css.matchAll(/(--[a-z0-9-]+)(?=\s*:)/g)]
-        .map((m) => m[1])
-        .filter((name) => !name.startsWith('--vscode')));
+/**
+ * 收集 vditor 源码里真正被消费的变量：样式中的 `var(--x)` 引用，加 TS 里
+ * 以字符串字面量读取的变量（readCssVar/getPropertyValue 键、导出白名单）。
+ * 只有"被定义"不算数——本 fork 主题文件里留有一批从未被消费的死变量
+ * （如 --ir-* 组），README 把它们当可用变量宣传就是误导。
+ */
+const readConsumedVars = (): Set<string> => {
+    const consumed = new Set<string>();
+    const walk = (dir: string): void => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+            const filePath = join(dir, entry.name);
+            if (entry.isDirectory()) {
+                walk(filePath);
+            } else if (/\.(less|css|ts)$/.test(entry.name)) {
+                const source = readFileSync(filePath, 'utf8');
+                for (const m of source.matchAll(/var\((--[a-z0-9-]+)/g)) {
+                    consumed.add(m[1]);
+                }
+                for (const m of source.matchAll(/"(--[a-z0-9-]+)"/g)) {
+                    consumed.add(m[1]);
+                }
+            }
+        }
+    };
+    walk(join('vditor', 'src'));
+    return consumed;
 };
 
 const readmeVars = (): Set<string> =>
@@ -53,21 +73,22 @@ describe('readmeMarkdownContent', () => {
 
     it('variable catalog reconciles with the living sources (no drift)', () => {
         const exported = readExportVars();
-        const themeVars = readThemeVars();
+        const consumed = readConsumedVars();
         const readme = readmeVars();
         assert.ok(exported.size >= 40, `EXPORT_CSS_VARS 提取异常（${exported.size} 项）`);
-        assert.ok(themeVars.size >= 50, `Auto.css 变量提取异常（${themeVars.size} 项）`);
+        assert.ok(consumed.size >= 150, `vditor 消费变量提取异常（${consumed.size} 项）`);
 
         // 防漏：导出白名单的变量 README 必须全列（动 EXPORT 必同步 README）
         const missingFromReadme = [...exported].filter((name) => !readme.has(name));
         assert.deepEqual(missingFromReadme, [],
             'EXPORT_CSS_VARS 有变量未列进 README——同步后再提交');
 
-        // 防陈旧：README 列的每个变量必须有代码背书（主题定义或导出消费）
-        const authority = new Set([...exported, ...themeVars]);
+        // 防陈旧+防死变量：README 列的每个变量必须有真实消费背书
+        // （样式 var() 引用 / TS 字面量读取 / 导出捕获），仅有定义不算
+        const authority = new Set([...exported, ...consumed]);
         const staleInReadme = [...readme].filter((name) => !authority.has(name));
         assert.deepEqual(staleInReadme, [],
-            'README 列出了权威源不存在的变量——已删除/改名未同步');
+            'README 列出了源码从未消费的变量——死变量/已删除项，先剔除再提交');
     });
 });
 

@@ -37,8 +37,10 @@ export const resolveSnippetDirPath = (homeDir: string | undefined): string | und
  * installed extension — it cannot go stale across upgrades. The file is
  * Markdown on purpose: the `*.css` scanner and the watcher ignore it, so
  * rewriting it never joins the overlay nor triggers a reload. Unit tests
- * reconcile its variable catalog against the living sources
- * (EXPORT_CSS_VARS + Auto.css) so the template cannot drift from code.
+ * reconcile its variable catalog against actual consumption in the sources
+ * (EXPORT_CSS_VARS + var()/readCssVar references) so the template cannot
+ * drift from code — variables that are merely defined but never consumed
+ * must not be advertised.
  */
 export const readmeMarkdownContent = (): string => `# 自定义 CSS 片段（custom CSS snippets）
 
@@ -84,9 +86,6 @@ export const readmeMarkdownContent = (): string => `# 自定义 CSS 片段（cus
 \`--cm-syntax-attribute\` | \`--cm-syntax-variable\` | \`--cm-syntax-def\` |
 \`--cm-syntax-bracket\` | \`--cm-syntax-tag\` | \`--cm-syntax-link\` | \`--cm-syntax-error\`
 
-**IR 语法着色**：\`--ir-heading-color\` 标记标题 | \`--ir-title-color\` 纯标题 |
-\`--ir-bi-color\` 加粗斜体 | \`--ir-link-color\` | \`--ir-bracket-color\` | \`--ir-paren-color\`
-
 **图表色板**：\`--chart-red\` | \`--chart-blue\` | \`--chart-yellow\` | \`--chart-orange\` |
 \`--chart-green\` | \`--chart-purple\` | \`--chart-foreground\`
 
@@ -105,12 +104,13 @@ export const readmeMarkdownContent = (): string => `# 自定义 CSS 片段（cus
   color: var(--chart-blue);
   font-family: "Microsoft YaHei", sans-serif;
 }
-/* 只调某一级字号：默认 h1 1.75em / h2 1.55em / h3 1.38em / h4 1.25em */
+/* 只调某一级字号：默认 h1 1.75em / h2 1.55em / h3 1.38em / h4 1.25em /
+   h5 1.13em / h6 1em */
 .vditor-reset h2 { font-size: 1.3em; }
 \`\`\`
 
-注意：\`--ir-heading-color\` 只染 IR 模式的 \`#\` 标记，不作用于标题文本；
-标题 Hx 左侧的 H1/H2 徽标是 \`::before\` 生成，一般不要覆盖。
+注意：IR 模式展开时的 \`#\` 标记与标题左侧的 H1/H2 徽标由编辑器独立
+着色（分别跟随正文色与次级色），上面的标题颜色规则不会影响它们。
 
 ## 边界
 
