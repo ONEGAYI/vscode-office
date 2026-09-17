@@ -100,6 +100,9 @@ handler.on("open", async (md) => {
     onEditSettings() {
       handler.emit('editViewerSettings', editor.exportViewerSettings())
     },
+    onOpenCustomCss() {
+      handler.emit('openCustomCss')
+    },
     input(content) {
       handler.emit("save", restoreWorkspaceBaseUrls(content, workspaceBaseUrl))
     },

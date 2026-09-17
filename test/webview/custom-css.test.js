@@ -164,4 +164,44 @@ describe('W. 接线契约', () => {
     assert.ok(/name\.name !== 'README\.css'/.test(src), '计数排除脚手架 README.css（0=未启用）');
     assert.ok(/\(type & vscode\.FileType\.File\) === 0/.test(src), 'symlink 的 css 按位判定不被排除');
   });
+
+  it('入口四段链路：settingsPanel 按钮 → Settings.ts 分发 → index.js emit → provider handler', () => {
+    const panel = read(path.join(ROOT, 'vditor', 'src', 'ts', 'ui', 'settingsPanel.ts'));
+    const footerHtml = panel.split('buildSettingsFooterHTML')[1] ?? '';
+    assert.ok(/data-open-css/.test(footerHtml), 'footer 有 custom CSS 按钮');
+    assert.ok(/settingsOpenCss/.test(footerHtml), '按钮文案走 i18n key');
+
+    const settings = read(path.join(ROOT, 'vditor', 'src', 'ts', 'toolbar', 'Settings.ts'));
+    assert.ok(/closest\("\[data-open-css\]"\)/.test(settings)
+      && /options\.onOpenCustomCss/.test(settings), 'Settings.ts 分发到 onOpenCustomCss');
+
+    const types = read(path.join(ROOT, 'vditor', 'src', 'types', 'index.d.ts'));
+    assert.ok(/onOpenCustomCss\?\(\): void;/.test(types), 'options 类型声明');
+
+    const indexJs = read(INDEXJS_PATH);
+    assert.ok(/onOpenCustomCss\(\)\s*\{\s*\n?\s*handler\.emit\('openCustomCss'\)/.test(indexJs),
+      'index.js emit openCustomCss');
+
+    const provider = read(PROVIDER_PATH);
+    assert.ok(/\.on\('openCustomCss',/.test(provider), 'provider 处理 openCustomCss');
+    assert.ok(/CustomCssService\.openSnippetFolder\(\)/.test(provider), '消息走 service 统一入口');
+  });
+
+  it('命令面板入口：package.json 声明 + extension.ts 注册', () => {
+    const pkg = JSON.parse(read(path.join(ROOT, 'package.json')));
+    const cmds = pkg.contributes.commands.map((c) => c.command);
+    assert.ok(cmds.includes('office.markdown.openCustomCssFolder'), '命令声明存在');
+    const ext = read(path.join(ROOT, 'src', 'extension.ts'));
+    assert.ok(/office\.markdown\.openCustomCssFolder/.test(ext), '命令已注册');
+  });
+
+  it('入口文案：zh_CN/en_US 有 settingsOpenCss（其余语言按惯例走 fallback）', () => {
+    for (const lang of ['zh_CN.js', 'en_US.js']) {
+      const content = read(path.join(ROOT, 'vditor', 'src', 'js', 'i18n', lang));
+      assert.ok(/'settingsOpenCss'/.test(content), `${lang} 缺 settingsOpenCss`);
+    }
+    // settingsPanel 渲染带 ?? 'Custom CSS' fallback，与 settingsEditFile 同模式
+    const panel = read(path.join(ROOT, 'vditor', 'src', 'ts', 'ui', 'settingsPanel.ts'));
+    assert.ok(/settingsOpenCss \?\? 'Custom CSS'/.test(panel));
+  });
 });

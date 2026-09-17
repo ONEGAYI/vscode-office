@@ -307,6 +307,17 @@ export class Settings extends MenuItem {
                 return;
             }
 
+            // Open custom css folder
+            if (event.target.closest("[data-open-css]")) {
+                const fn = vditor.options.onOpenCustomCss;
+                if (typeof fn === "function") {
+                    fn();
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+
             // Edit settings file
             if (event.target.closest("[data-edit-settings]")) {
                 const fn = vditor.options.onEditSettings;

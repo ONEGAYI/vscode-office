@@ -594,6 +594,8 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             }
         }).on('editViewerSettings', async (settings) => {
             await ViewerSettingsService.createAndOpen(settings);
+        }).on('openCustomCss', () => {
+            void CustomCssService.openSnippetFolder();
         })
 
         const basePath = Global.getConfig('workspacePathAsImageBasePath') ?

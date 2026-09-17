@@ -644,6 +644,9 @@ interface IOptions {
 
     /** 点击编辑配置文件按钮时触发 */
     onEditSettings?(): void;
+
+    /** 点击打开自定义 CSS 目录按钮时触发 */
+    onOpenCustomCss?(): void;
 }
 
 interface IEChart {

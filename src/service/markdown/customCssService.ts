@@ -103,6 +103,25 @@ export class CustomCssService {
         }
     }
 
+    /**
+     * Entry point shared by the Settings-panel button and the command
+     * palette: reveals the snippet folder in the OS file manager,
+     * creating it on first use.
+     */
+    static async openSnippetFolder(): Promise<void> {
+        const dirUri = this.getSnippetDirUri();
+        if (!dirUri) {
+            vscode.window.showWarningMessage('Custom CSS snippets are not supported in this environment.');
+            return;
+        }
+        try {
+            await this.ensureSnippetDir(dirUri);
+            vscode.commands.executeCommand('revealFileInOS', dirUri);
+        } catch {
+            // opening a folder must never surface errors into the editor
+        }
+    }
+
     private static ensureWatcher(dirUri: vscode.Uri): void {
         if (this.watcher) {
             return;
