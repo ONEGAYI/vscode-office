@@ -9,6 +9,8 @@ import path, { dirname, extname, isAbsolute, join, parse } from 'path';
 import * as vscode from 'vscode';
 import { Holder } from './markdown/holder';
 import { convertMd } from "./markdown/markdown-pdf";
+import { planSwitchEditor } from './markdown/switchEditorPlanner';
+import { openTextDiff, TEXT_DIFF_SCHEME } from './markdown/markdownTextDiff';
 import { Global, i18n } from "@/common/global";
 
 export type ExportType = 'pdf' | 'html' | 'docx';
@@ -238,11 +240,33 @@ export class MarkdownService {
         }
     }
 
-    public switchEditor(uri: vscode.Uri) {
-        const editor = vscode.window.activeTextEditor;
-        if (!uri) uri = editor?.document.uri;
-        const type = editor ? 'cweijan.markdownViewer' : 'default';
-        vscode.commands.executeCommand('vscode.openWith', uri, type);
+    public switchEditor(uri?: vscode.Uri) {
+        const activeTab = vscode.window.tabGroups.activeTabGroup?.activeTab;
+        const tabInput = activeTab?.input;
+        if (tabInput instanceof vscode.TabInputTextDiff
+            && tabInput.original.scheme === TEXT_DIFF_SCHEME
+            && tabInput.modified.scheme === TEXT_DIFF_SCHEME) {
+            // already the forced text diff; keep the command idempotent
+            return;
+        }
+        const plan = planSwitchEditor({
+            commandUri: uri?.toString(),
+            activeTextEditorUri: vscode.window.activeTextEditor?.document.uri.toString(),
+            activeTabDiff: tabInput instanceof vscode.TabInputTextDiff && activeTab
+                ? {
+                    original: tabInput.original.toString(),
+                    modified: tabInput.modified.toString(),
+                    label: activeTab.label,
+                }
+                : undefined,
+        });
+        if (!plan) return;
+        if (plan.action === 'diff') {
+            void openTextDiff(vscode.Uri.parse(plan.original), vscode.Uri.parse(plan.modified), plan.label)
+                .then(() => activeTab && vscode.window.tabGroups.close(activeTab).then(undefined, () => { }));
+        } else {
+            void vscode.commands.executeCommand('vscode.openWith', vscode.Uri.parse(plan.uri), plan.viewType);
+        }
     }
 
 }
