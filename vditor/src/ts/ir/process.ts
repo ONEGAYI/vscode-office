@@ -6,7 +6,7 @@ import {saveCacheFocus} from "../util/cacheFocus";
 import {clearHistoryInputBuffer} from "../util/historyInputBufferState";
 import {listToggle} from "../util/fixBrowserBehavior";
 import {hasClosestBlock, hasClosestByAttribute, hasClosestByClassName, hasClosestByMatchTag} from "../util/hasClosest";
-import {getEditorRange, setRangeByWbr, setSelectionFocus} from "../util/selection";
+import {getEditorRange, setRangeByWbr, setSelectionFocus, captureSelectionOffsets, restoreSelectionOffsets, EditorSelectionSnapshot} from "../util/selection";
 import {getHistoryMaxWaitFactor, getHistoryRecordWait} from "../util/historySchedule";
 import {scheduleRenderToc} from "../util/toc";
 import {highlightToolbarIR} from "./highlightToolbarIR";
@@ -102,6 +102,14 @@ const removeInline = (range: Range, vditor: IVditor, type: string) => {
     }
 };
 
+/** 取消内联样式并保留选区：首 marker 在选区之前被摘除，端点各左移 marker 长度 */
+const removeInlineKeepSelection = (vditor: IVditor, range: Range, type: string, markerLength: number) => {
+    const savedSelection = captureSelectionOffsets(vditor);
+    removeInline(range, vditor, type);
+    // 失败时 removeInline 插入的 wbr 由函数尾 setRangeByWbr 兜底
+    restoreSelectionOffsets(vditor, savedSelection, -markerLength);
+};
+
 export const processToolbar = (vditor: IVditor, actionBtn: Element, prefix: string, suffix: string) => {
     const range = getEditorRange(vditor);
     const commandName = actionBtn.getAttribute("data-type");
@@ -115,9 +123,12 @@ export const processToolbar = (vditor: IVditor, actionBtn: Element, prefix: stri
         if (commandName === "quote") {
             const quoteElement = hasClosestByMatchTag(typeElement, "BLOCKQUOTE");
             if (quoteElement) {
+                const savedSelection = captureSelectionOffsets(vditor);
                 range.insertNode(document.createElement("wbr"));
                 quoteElement.outerHTML = quoteElement.innerHTML.trim() === "" ?
                     `<p data-block="0">${quoteElement.innerHTML}</p>` : quoteElement.innerHTML;
+                // 恢复失败时保留 wbr，由函数尾统一 setRangeByWbr 兜底
+                restoreSelectionOffsets(vditor, savedSelection);
             }
         } else if (commandName === "link") {
             const aElement = hasClosestByAttribute(range.startContainer, "data-type", "a") as HTMLElement;
@@ -131,13 +142,13 @@ export const processToolbar = (vditor: IVditor, actionBtn: Element, prefix: stri
                 }
             }
         } else if (commandName === "italic") {
-            removeInline(range, vditor, "em");
+            removeInlineKeepSelection(vditor, range, "em", 1);
         } else if (commandName === "bold") {
-            removeInline(range, vditor, "strong");
+            removeInlineKeepSelection(vditor, range, "strong", 2);
         } else if (commandName === "strike") {
-            removeInline(range, vditor, "s");
+            removeInlineKeepSelection(vditor, range, "s", 2);
         } else if (commandName === "inline-code") {
-            removeInline(range, vditor, "code");
+            removeInlineKeepSelection(vditor, range, "code", 1);
         } else if (commandName === "check" || commandName === "list" || commandName === "ordered-list") {
             listToggle(vditor, range, commandName);
             useHighlight = false;
@@ -161,8 +172,10 @@ export const processToolbar = (vditor: IVditor, actionBtn: Element, prefix: stri
             }
         } else if (commandName === "quote") {
             if (blockElement) {
+                const savedSelection = captureSelectionOffsets(vditor);
                 range.insertNode(document.createElement("wbr"));
                 blockElement.outerHTML = `<blockquote data-block="0">${blockElement.outerHTML}</blockquote>`;
+                restoreSelectionOffsets(vditor, savedSelection);
                 useHighlight = false;
                 actionBtn.classList.add("vditor-menu--current");
             }
@@ -179,6 +192,9 @@ export const processToolbar = (vditor: IVditor, actionBtn: Element, prefix: stri
         } else if (commandName === "italic" || commandName === "bold" || commandName === "strike"
             || commandName === "inline-code" || commandName === "code" || commandName === "table") {
             let html;
+            // 内联标记插入平移选区偏移（如 ** 前缀使选中内容整体后移）
+            let savedSelection: EditorSelectionSnapshot = null;
+            let markerShift = 0;
             if (range.toString() === "") {
                 html = `${prefix}<wbr>${suffix}`;
             } else {
@@ -186,6 +202,8 @@ export const processToolbar = (vditor: IVditor, actionBtn: Element, prefix: stri
                     html = `${prefix}${range.toString()}<wbr>${suffix}`;
                 } else {
                     html = `${prefix}${range.toString()}${suffix}<wbr>`;
+                    savedSelection = captureSelectionOffsets(vditor);
+                    markerShift = prefix.length;
                 }
                 range.deleteContents();
             }
@@ -197,6 +215,8 @@ export const processToolbar = (vditor: IVditor, actionBtn: Element, prefix: stri
             spanElement.innerHTML = html;
             range.insertNode(spanElement);
             input(vditor, range);
+            // input() 同步完成 spin 重渲染，此处按平移偏移在新标记节点内重选内容
+            restoreSelectionOffsets(vditor, savedSelection, markerShift);
 
             if (commandName === "table") {
                 range.selectNodeContents(getSelection().getRangeAt(0).startContainer.parentElement);
