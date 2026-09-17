@@ -47,5 +47,5 @@
 
 - 上游待合并 PR：#610（webview 输入校验）/ #611（外部变更兜底）/ #612（IR 模式 CM 重挂载 + codeRender 清理）/ #613（列表 marker 上游移植，基于 upstream/main）
 - fork issues #1–#5：已全部修复关闭，随 v4.3.0-fork.1 交付——#1 marker 聚焦可编辑（e166a00，上游走 #613）；#2 滚动条（a117f6b 移除 400px 封顶 + #612 清理）；#3 CM 重挂载（8638b2f）；#4/#5 watcher 覆盖与双面板提示协调（1fbe850，`fix/markdown-external-sync-coverage` 已并入 fork-main；上游侧待 #611 合并后发 PR）
-- 大纲拖拽重排 + 标式透传：分支 `feat/outline-drag-reorder`（工作树 `vscode-office-outline`），经 review-loops 审查修复 id 漂移/外来拖放门/双重转义/on* 兜底后并入 fork-main，60 单测 + 137 webview 全绿
+- 大纲拖拽重排 + 标式透传：`feat/outline-drag-reorder` 已并入 fork-main（经 review-loops 审查修复 id 漂移/外来拖放门/双重转义/on* 兜底，60 单测 + 137 webview 全绿，工作树已清理）；条目字重透传修复（标题层级 600 致整条半粗 → font-weight 恒不透传，行内加粗靠标签直通）经 PR #9 并入，工作树与分支已清理
 - 用户实测结论：键盘穿透问题在本 fork 无需修复（勿重复移植）
