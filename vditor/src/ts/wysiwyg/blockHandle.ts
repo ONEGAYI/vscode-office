@@ -436,7 +436,16 @@ const positionHandle = (state: IBlockHandleState, block: HTMLElement) => {
     const wrapperRect = state.wrapper.getBoundingClientRect();
     const lineHeight = parseFloat(getComputedStyle(block).lineHeight) || 24;
     const top = blockRect.top - wrapperRect.top + Math.max(0, Math.min(lineHeight / 2 - HANDLE_SIZE / 2, 6));
-    const left = blockRect.left - wrapperRect.left - (block.tagName === "LI" ? 40 : 28) - HANDLE_SIZE - HANDLE_GAP;
+    let left = blockRect.left - wrapperRect.left - (block.tagName === "LI" ? 40 : 28) - HANDLE_SIZE - HANDLE_GAP;
+    if (block.tagName === "LI") {
+        // Custom list markers extend into the gutter via a negative margin.
+        // Keep BOTH handle buttons outside that area: overlapping the marker
+        // makes caretPositionFromPoint hit the grip SVG instead of its text.
+        const markerMargin = parseFloat(getComputedStyle(block, "::before").marginLeft) || 0;
+        if (markerMargin < 0) {
+            left = Math.min(left, blockRect.left - wrapperRect.left + markerMargin - state.root.offsetWidth - HANDLE_GAP);
+        }
+    }
     state.root.style.top = `${top}px`;
     state.root.style.left = `${left}px`;
     state.root.classList.add(`${ROOT_CLASS}--visible`);
