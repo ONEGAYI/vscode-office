@@ -218,6 +218,10 @@
 				"icon": "$(edit)"
 			},
 			{
+				"command": "office.markdown.openCustomCssFolder",
+				"title": "Open custom CSS snippets folder (markdown editor)"
+			},
+			{
 				"command": "office.csv.switch",
 				"title": "Switch CSV editor",
 				"icon": "$(edit)"

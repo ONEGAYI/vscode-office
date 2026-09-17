@@ -6,6 +6,7 @@ import { ensureParentDirectory } from '@/common/workspaceFs';
 import { Handler } from '../common/handler';
 import { Util } from '../common/util';
 import { Holder } from '../service/markdown/holder';
+import { CustomCssService } from '../service/markdown/customCssService';
 import { MarkdownService } from '../service/markdownService';
 import {
     extractUriScheme,
@@ -88,6 +89,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         return {
             editorTheme: String(configuration.get<string>("editorTheme", "Auto")),
             codeTheme: String(configuration.get<string>("codeMirrorTheme", "Auto")),
+            customCssCount: String(CustomCssService.snippetCount),
         };
     }
 
@@ -172,7 +174,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         return vscode.Uri.file(workspacePath);
     }
 
-    resolveCustomTextEditor(document: vscode.TextDocument, webviewPanel: vscode.WebviewPanel, token: vscode.CancellationToken): void | Thenable<void> {
+    async resolveCustomTextEditor(document: vscode.TextDocument, webviewPanel: vscode.WebviewPanel, token: vscode.CancellationToken): Promise<void> {
         // console.log('schema', document.uri.scheme, document.uri.path, document.uri.query);
         const uri = document.uri;
         const webview = webviewPanel.webview;
@@ -188,6 +190,9 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             ],
         }
         const handler = Handler.bind(webviewPanel, uri);
+        // Preload the custom-CSS overlay so telemetry sees the snippet count
+        // and the directory watcher is up before any webview asks for it.
+        await CustomCssService.loadForWebview();
         TelemetryService.get()?.trackViewOpen(
             'markdown',
             fileTypeFromPath(uri.fsPath),
@@ -413,6 +418,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
         handler.on("init", async () => {
             const viewerSettings = await ViewerSettingsService.loadForWebview();
+            const customCss = await CustomCssService.loadForWebview();
             const workspaceUri = this.getWorkspaceUriByFileUtil(uri);
             handler.emit("open", {
                 content, rootPath,
@@ -422,6 +428,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 shouldRestoreFocus: config.get<boolean>("restoreViewState", false),
                 config: this.getMarkdownWebviewConfig(config),
                 viewerSettings,
+                customCss,
             })
             this.updateCount(content)
             this.countStatus.show()
@@ -587,6 +594,8 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             }
         }).on('editViewerSettings', async (settings) => {
             await ViewerSettingsService.createAndOpen(settings);
+        }).on('openCustomCss', () => {
+            void CustomCssService.openSnippetFolder();
         })
 
         const basePath = Global.getConfig('workspacePathAsImageBasePath') ?

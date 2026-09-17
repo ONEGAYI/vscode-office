@@ -181,4 +181,6 @@ window.VditorI18n = {
   'boldColorTeal': '青色',
   'settingsReset': '重置',
   'settingsEditFile': '编辑配置',
+
+  'settingsEditFile': '编辑配置',  'settingsOpenCss': '自定义 CSS',
 }

@@ -181,4 +181,6 @@ window.VditorI18n = {
   'boldColorTeal': 'Teal',
   'settingsReset': 'Reset',
   'settingsEditFile': 'Edit Config',
+
+  'settingsEditFile': 'Edit Config',  'settingsOpenCss': 'Custom CSS',
 }
