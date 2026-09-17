@@ -9,6 +9,8 @@ import path, { dirname, extname, isAbsolute, join, parse } from 'path';
 import * as vscode from 'vscode';
 import { Holder } from './markdown/holder';
 import { convertMd } from "./markdown/markdown-pdf";
+import { parseDiffLabel, planSwitchEditor, resolveUnknownDiffSides } from './markdown/switchEditorPlanner';
+import { openMarkdownDiff, openTextDiff } from './markdown/markdownTextDiff';
 import { Global, i18n } from "@/common/global";
 
 export type ExportType = 'pdf' | 'html' | 'docx';
@@ -238,11 +240,79 @@ export class MarkdownService {
         }
     }
 
-    public switchEditor(uri: vscode.Uri) {
-        const editor = vscode.window.activeTextEditor;
-        if (!uri) uri = editor?.document.uri;
-        const type = editor ? 'cweijan.markdownViewer' : 'default';
-        vscode.commands.executeCommand('vscode.openWith', uri, type);
+    public async switchEditor(uri?: vscode.Uri) {
+        // The extension still supports VS Code versions predating the Tab API.
+        const activeTab = vscode.window.tabGroups?.activeTabGroup?.activeTab;
+        const tabInput = activeTab?.input;
+        let plan = planSwitchEditor({
+            commandUri: uri?.toString(),
+            activeTextEditorUri: vscode.window.activeTextEditor?.document.uri.toString(),
+            activeTabDiff: vscode.TabInputTextDiff && tabInput instanceof vscode.TabInputTextDiff && activeTab
+                ? {
+                    original: tabInput.original.toString(),
+                    modified: tabInput.modified.toString(),
+                    label: activeTab.label,
+                }
+                : undefined,
+        });
+        // Diff tabs with custom editors on either side expose no
+        // original/modified pair to the extension API (opaque input), so the
+        // planner above would degrade them into a single-file open. Recover
+        // the pair from the label and open documents, with an optional side
+        // URI from the title command. Standalone tabs are not required.
+        if (activeTab && parseDiffLabel(activeTab.label)
+            && !(tabInput instanceof vscode.TabInputTextDiff)
+            && !(tabInput instanceof vscode.TabInputText)
+            && !(tabInput instanceof vscode.TabInputCustom)) {
+            const sides = resolveUnknownDiffSides(activeTab.label, uri?.toString(), this.collectOpenDocumentInfos());
+            if (sides) {
+                plan = { action: 'diff', viewType: 'default', ...sides, label: activeTab.label };
+            } else {
+                await vscode.window.showWarningMessage('Cannot identify both Markdown comparison files. Keep the comparison open and retry after opening its source files.');
+                return;
+            }
+        }
+        if (!plan) return;
+        if (plan.action === 'diff') {
+            const openDiff = plan.viewType === 'default' ? openTextDiff : openMarkdownDiff;
+            await openDiff(vscode.Uri.parse(plan.original), vscode.Uri.parse(plan.modified), plan.label);
+            // VS Code 1.86 can revert a dirty native document when closing
+            // its tab even though a custom comparison now displays it.
+            // Retain that tab until saved; subsequent switches reuse it.
+            const hasUnsavedChanges = vscode.workspace.textDocuments.some(document => document.isDirty
+                && (document.uri.toString() === plan.original || document.uri.toString() === plan.modified));
+            if (activeTab && !activeTab.isDirty && !hasUnsavedChanges
+                && vscode.window.tabGroups.activeTabGroup.activeTab !== activeTab) {
+                try {
+                    await vscode.window.tabGroups.close(activeTab);
+                } catch {
+                    // The new text diff remains available either way.
+                }
+            }
+        } else {
+            await vscode.commands.executeCommand('vscode.openWith', vscode.Uri.parse(plan.uri), plan.viewType);
+        }
+    }
+
+    private collectOpenDocumentInfos() {
+        const infos: { label: string; uri?: string }[] = [];
+        // Custom diff documents stay open even after their standalone tabs
+        // close. They also cover title commands without a resource argument.
+        for (const document of vscode.workspace.textDocuments) {
+            infos.push({ label: '', uri: document.uri.toString() });
+        }
+        for (const group of vscode.window.tabGroups.all) {
+            for (const tab of group.tabs) {
+                const input = tab.input;
+                infos.push({
+                    label: tab.label,
+                    uri: input instanceof vscode.TabInputText || input instanceof vscode.TabInputCustom
+                        ? input.uri.toString()
+                        : undefined,
+                });
+            }
+        }
+        return infos;
     }
 
 }

@@ -35,7 +35,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	const webUnsupportedViewer = new WebUnsupportedViewerProvider(context);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('office.markdown.switch', (uri) => { markdownService.switchEditor(uri); }),
+		vscode.commands.registerCommand('office.markdown.switch', (uri) => markdownService.switchEditor(uri)),
 		vscode.commands.registerCommand('office.csv.switch', (uri) => { switchCsvEditor(uri); }),
 		vscode.commands.registerCommand('office.html.preview', (uri) => HtmlService.previewHtml(uri, context)),
 		vscode.window.registerCustomEditorProvider('cweijan.markdownViewer', markdownEditorProvider, viewOption),

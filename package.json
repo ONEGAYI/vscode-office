@@ -810,6 +810,7 @@
 		]
 	},
 	"scripts": {
+		"test:markdown": "node test/run-markdown-tests.cjs",
 		"dev": "vite --mode=development",
 		"dev:web": "OFFICE_EXTENSION_TARGET=web vite --mode=development",
 		"lint:fix": "eslint \"src/**/*.{ts,tsx}\" --fix",
