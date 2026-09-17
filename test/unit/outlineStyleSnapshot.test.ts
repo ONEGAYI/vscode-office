@@ -5,8 +5,9 @@ import { buildOutlineStyleSnapshot } from '../../vditor/src/ts/outline/styleSnap
 /**
  * 大纲条目标式快照的纯逻辑契约（feat/outline-drag-reorder 功能 2）
  *
- * 偏差式透传：仅当标题计算值与编辑器根计算值不同（或偏离标题默认值）才注入；
- * font-size 一律排除（大纲保留自身层级字号体系）。
+ * 偏差式透传：仅当标题计算值与编辑器根计算值不同才注入；
+ * font-size 与 font-weight 一律排除（大纲保留自身层级字号体系；标题层级
+ * 字重不进大纲，行内真实加粗由 strong/b 标签直通 + UA 默认样式呈现）。
  */
 
 const FULL_DEFAULTS = {
@@ -50,7 +51,11 @@ describe('buildOutlineStyleSnapshot', () => {
     ), 'background-color: rgb(255, 235, 59);');
   });
 
-  it('font-weight 仅偏离标题默认值(700/bold)时注入', () => {
+  it('font-weight 恒不透传（标题层级字重不进大纲，行内加粗靠标签直通）', () => {
+    // 600 是编辑器主题对 h1-h6 的实际设定值（_reset.less），曾使全部条目呈半粗体
+    assert.equal(buildOutlineStyleSnapshot(
+      { ...FULL_DEFAULTS, 'font-weight': '600' }, FULL_DEFAULTS,
+    ), '');
     assert.equal(buildOutlineStyleSnapshot(
       { ...FULL_DEFAULTS, 'font-weight': '700' }, FULL_DEFAULTS,
     ), '');
@@ -59,7 +64,10 @@ describe('buildOutlineStyleSnapshot', () => {
     ), '');
     assert.equal(buildOutlineStyleSnapshot(
       { ...FULL_DEFAULTS, 'font-weight': '400' }, FULL_DEFAULTS,
-    ), 'font-weight: 400;');
+    ), '');
+    assert.equal(buildOutlineStyleSnapshot(
+      { ...FULL_DEFAULTS, 'font-weight': '800' }, FULL_DEFAULTS,
+    ), '');
   });
 
   it('font-style 仅非 normal 时注入', () => {

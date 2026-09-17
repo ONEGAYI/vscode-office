@@ -438,7 +438,7 @@ describe('outline style passthrough', { skip: !DIST_READY }, () => {
         }
       });
 
-      it('S2: 标题被 CSS 控制 — 偏差属性注入条目，font-size 恒不透传', async () => {
+      it('S2: 标题被 CSS 控制 — 偏差属性注入条目，font-size/font-weight 恒不透传', async () => {
         const ctx = await boot('# Styled\n\nbody\n', { mode });
         try {
           await settle();
@@ -454,8 +454,8 @@ describe('outline style passthrough', { skip: !DIST_READY }, () => {
           await settle();
           const style = contentSpanOf(outlineRows(ctx)[0]).getAttribute('style') || '';
           assert.match(style, /color:\s*rgb\(255, 0, 0\)/, 'CSS 颜色偏差应注入');
-          assert.match(style, /font-weight:\s*400/, '偏离默认的 font-weight 应注入');
           assert.ok(!style.includes('font-size'), 'font-size 恒不透传');
+          assert.ok(!style.includes('font-weight'), 'font-weight 恒不透传（标题层级字重不进大纲，行内加粗靠标签直通）');
         } finally {
           ctx.window.close();
         }

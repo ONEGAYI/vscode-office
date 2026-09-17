@@ -22,6 +22,7 @@
 - 单元测试：`npm run test:unit`（`node --test "test/unit/*.test.ts"`，需 Node ≥ 22.6；仓库 CI 为 Node 20，PR 描述中注明该限制）
 - 根 `tsc --noEmit` 在 main 上即损坏（TS5070 配置错误），以 `npm run build` 作为编译门；eslint 只对改动文件执行
 - webview 行为验证：`vditor/dist` 可经本地 HTTP server + 探针页在真实浏览器中驱动（注意 stock vditor 的 CDN 拼接是 `{cdn}/dist/...`，cdn 参数指向 `vditor` 目录而非 `vditor/dist`）；探针文件验证完即删
+- dev 模式（F5）可运行的工作树需三件套：根 `node_modules`、`resource/markdown/dist`（vditor 子包构建）、`out/extension.js`（根 `npm run build`；`out/` 不进 git，新工作树默认没有）。交付新工作树供用户实测时三件齐备，否则注明缺什么
 
 ## 版本发布（fork Release）
 
@@ -40,7 +41,7 @@
 - 代码块 CodeMirror 挂载入口是 `renderCodeBlocks`（懒挂载，视口 ±200px 内挂载、屏外 placeholder）；任何全文 DOM 替换路径（`setValue`/`applyAIResult`）之后必须补调，否则代码块退化为纯文本（IR 分支曾遗漏，上游 PR #612 修复）
 - markdown webview 渲染不可信文档内容，**所有 webview → host 消息按攻击者输入处理**：校验模式见 `src/service/markdown/webviewInputValidation.ts`（上游 PR #610）
 - 外部磁盘变更兜底：`checkExternalDiskChange` + `onWillSaveTextDocument` 停靠模式（上游 PR #611）；watcher 覆盖与双面板限制已在 fork 内修复（1fbe850，fork issues #4/#5 已关闭；上游侧待 #611 合并后发 PR）
-- 大纲面板（vditor 内置 Outline）拖拽重排与标式透传（feat/outline-drag-reorder）：区域划分/插入判定在 `vditor/src/ts/outline/sectionIndex.ts`（纯函数，单测契约）；拖拽提交配方照抄 blockHandle 块拖拽（DOM 移动 → `renderTocNow` → `undo.addToUndoStack` → `execAfterRender({enableAddUndoStack:false})`），移动后需把光标定位到被拖标题，否则 undo 快照无 `<wbr>` 且无选区时 `renderDiff` 会崩；条目内容统一用剥离 marker 的标题克隆 innerHTML（修复 ir 路径 Lute ToC 丢弃 `<s>`），元素级样式走 `styleSnapshot.ts` 偏差式注入（与编辑器根计算值对比，font-size 恒不透传）；大纲行 id → 标题解析必须限于当前编辑器子级，**不能用 `document.getElementById`**（同页多编辑器/重复 id 时会命中他处导致拖拽静默失效，真实浏览器探针实测教训）；拖拽状态持标题**元素引用**而非 id——outlineRender 每次渲染按位置重编号 id，持 id 会在拖拽中途重建（输入防抖/AI 流式）时漂移到别的同基名标题而移动错误章节；dragover/drop 以自定义 MIME `application/x-vditor-outline` 识别本面板拖拽（外来拖放/残留状态不触发重排，对齐 blockHandle 的 DROP_EDITOR 先例）；`escapeOutlineCodeHTML` 的 code 内 & 预转义**只服务于喂 Lute 的 outerHTML**，直通 innerHTML 自带一次实体解析，叠加即双重转义
+- 大纲面板（vditor 内置 Outline）拖拽重排与标式透传（feat/outline-drag-reorder）：区域划分/插入判定在 `vditor/src/ts/outline/sectionIndex.ts`（纯函数，单测契约）；拖拽提交配方照抄 blockHandle 块拖拽（DOM 移动 → `renderTocNow` → `undo.addToUndoStack` → `execAfterRender({enableAddUndoStack:false})`），移动后需把光标定位到被拖标题，否则 undo 快照无 `<wbr>` 且无选区时 `renderDiff` 会崩；条目内容统一用剥离 marker 的标题克隆 innerHTML（修复 ir 路径 Lute ToC 丢弃 `<s>`），元素级样式走 `styleSnapshot.ts` 偏差式注入（与编辑器根计算值对比，font-size/font-weight 恒不透传——_reset.less 给 h1-h6 的 600 曾使全部条目呈半粗体，行内真实加粗靠 strong/b 标签直通 + UA 默认样式呈现，不依赖快照透传）；大纲行 id → 标题解析必须限于当前编辑器子级，**不能用 `document.getElementById`**（同页多编辑器/重复 id 时会命中他处导致拖拽静默失效，真实浏览器探针实测教训）；拖拽状态持标题**元素引用**而非 id——outlineRender 每次渲染按位置重编号 id，持 id 会在拖拽中途重建（输入防抖/AI 流式）时漂移到别的同基名标题而移动错误章节；dragover/drop 以自定义 MIME `application/x-vditor-outline` 识别本面板拖拽（外来拖放/残留状态不触发重排，对齐 blockHandle 的 DROP_EDITOR 先例）；`escapeOutlineCodeHTML` 的 code 内 & 预转义**只服务于喂 Lute 的 outerHTML**，直通 innerHTML 自带一次实体解析，叠加即双重转义
 
 ## 进行中工作索引
 

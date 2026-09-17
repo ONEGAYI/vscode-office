@@ -1,9 +1,11 @@
 /**
  * 大纲条目标式快照的纯逻辑（无 DOM 依赖）。
  *
- * 偏差式透传：标题被 CSS 控制时，仅注入与「编辑器根计算值」不同（或偏离标题
- * 默认值）的属性；基础排版不透传，避免逐行内联样式杀死大纲 hover/active 变色。
+ * 偏差式透传：标题被 CSS 控制时，仅注入与「编辑器根计算值」不同的属性；基础
+ * 排版不透传，避免逐行内联样式杀死大纲 hover/active 变色。
  * font-size 一律排除——大纲保留自身按层级递减的字号体系。
+ * font-weight 一律排除——标题层级字重（如 _reset.less 对 h1-h6 的 600）不进
+ * 大纲；行内真实加粗由 strong/b 标签直通（克隆 innerHTML）+ UA 默认样式呈现。
  */
 export interface IComputedStyleSource {
     /** CSS 属性名（kebab-case）→ 计算值，取自 getComputedStyle().getPropertyValue() */
@@ -15,15 +17,11 @@ const DEVIATION_PROPS = [
     "color",
     "background-color",
     "font-family",
-    "font-weight",
     "font-style",
     "text-decoration-line",
     "text-decoration-style",
     "text-decoration-color",
 ];
-
-/** 标题的浏览器默认加粗值：不视为偏差，不透传 */
-const DEFAULT_HEADING_WEIGHTS = new Set(["", "700", "bold"]);
 
 const isTransparent = (value: string): boolean => {
     return value === "transparent" || value === "rgba(0, 0, 0, 0)";
@@ -45,11 +43,7 @@ export const buildOutlineStyleSnapshot = (heading: IComputedStyleSource, base: I
         if (prop === "background-color" && isTransparent(headingValue)) {
             return;
         }
-        if (prop === "font-weight") {
-            if (DEFAULT_HEADING_WEIGHTS.has(headingValue)) {
-                return;
-            }
-        } else if (prop === "font-style") {
+        if (prop === "font-style") {
             if (headingValue === "normal") {
                 return;
             }
