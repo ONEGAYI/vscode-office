@@ -42,11 +42,12 @@
 - markdown webview 渲染不可信文档内容，**所有 webview → host 消息按攻击者输入处理**：校验模式见 `src/service/markdown/webviewInputValidation.ts`（上游 PR #610）
 - 外部磁盘变更兜底：`checkExternalDiskChange` + `onWillSaveTextDocument` 停靠模式（上游 PR #611）；watcher 覆盖与双面板限制已在 fork 内修复（1fbe850，fork issues #4/#5 已关闭；上游侧待 #611 合并后发 PR）
 - 大纲面板（vditor 内置 Outline）拖拽重排与标式透传（feat/outline-drag-reorder）：区域划分/插入判定在 `vditor/src/ts/outline/sectionIndex.ts`（纯函数，单测契约）；拖拽提交配方照抄 blockHandle 块拖拽（DOM 移动 → `renderTocNow` → `undo.addToUndoStack` → `execAfterRender({enableAddUndoStack:false})`），移动后需把光标定位到被拖标题，否则 undo 快照无 `<wbr>` 且无选区时 `renderDiff` 会崩；条目内容统一用剥离 marker 的标题克隆 innerHTML（修复 ir 路径 Lute ToC 丢弃 `<s>`），元素级样式走 `styleSnapshot.ts` 偏差式注入（与编辑器根计算值对比，font-size/font-weight 恒不透传——_reset.less 给 h1-h6 的 600 曾使全部条目呈半粗体，行内真实加粗靠 strong/b 标签直通 + UA 默认样式呈现，不依赖快照透传）；大纲行 id → 标题解析必须限于当前编辑器子级，**不能用 `document.getElementById`**（同页多编辑器/重复 id 时会命中他处导致拖拽静默失效，真实浏览器探针实测教训）；拖拽状态持标题**元素引用**而非 id——outlineRender 每次渲染按位置重编号 id，持 id 会在拖拽中途重建（输入防抖/AI 流式）时漂移到别的同基名标题而移动错误章节；dragover/drop 以自定义 MIME `application/x-vditor-outline` 识别本面板拖拽（外来拖放/残留状态不触发重排，对齐 blockHandle 的 DROP_EDITOR 先例）；`escapeOutlineCodeHTML` 的 code 内 & 预转义**只服务于喂 Lute 的 outerHTML**，直通 innerHTML 自带一次实体解析，叠加即双重转义
+- 样式操作选区保留体系（b3cdd5f，上游 #615）：wbr 单点锚表达不了选区范围，改为 strip-ZWSP 文本偏移快照 + 内容锚校验（`vditor/src/ts/util/selection.ts` ↔ `textOffset.ts`），同步段内重建非 collapsed 选区，失败/错位退回 wbr 兜底（宁可塌缩不错选）；listToggle（含批量/取消/check 空格 +1）、quote 四分支、IR 内联样式添加与移除（marker 平移 ±长度）、wysiwyg inline-code 移除均经此管道
+- 用户实测：键盘穿透问题在本 fork 无需修复（勿重复移植）
 
 ## 进行中工作索引
 
 - 上游待合并 PR：#610（webview 输入校验）/ #611（外部变更兜底）/ #612（IR 模式 CM 重挂载 + codeRender 清理）/ #613（列表 marker 上游移植，基于 upstream/main）/ #615（工具栏样式操作后保留文本选区，基于 upstream/main，分支 `origin/fix/toolbar-selection-retention` 保留至合并）
-- fork issues #1–#5：已全部修复关闭，随 v4.3.0-fork.1 交付——#1 marker 聚焦可编辑（e166a00，上游走 #613）；#2 滚动条（a117f6b 移除 400px 封顶 + #612 清理）；#3 CM 重挂载（8638b2f）；#4/#5 watcher 覆盖与双面板提示协调（1fbe850，`fix/markdown-external-sync-coverage` 已并入 fork-main；上游侧待 #611 合并后发 PR）
-- 大纲拖拽重排 + 标式透传：`feat/outline-drag-reorder` 已并入 fork-main（经 review-loops 审查修复 id 漂移/外来拖放门/双重转义/on* 兜底，60 单测 + 137 webview 全绿，工作树已清理）；条目字重透传修复（标题层级 600 致整条半粗 → font-weight 恒不透传，行内加粗靠标签直通）经 PR #9 并入，工作树与分支已清理
-- 工具栏样式操作选区保留（fix/selection-retention，b3cdd5f 经 568e1b5 并入 fork-main）：wbr 单点锚无法表达选区范围 → 改为 strip-ZWSP 文本偏移快照 + 内容锚校验，同步段内重建非 collapsed 选区，失败/错位退回 wbr 兜底（宁可塌缩不错选）；接入 listToggle（含批量/取消/check 空格 +1）、quote 四分支、IR 内联样式添加与移除（marker 平移 ±长度）、wysiwyg inline-code 移除；15 webview + 9 unit 新契约，review-loops 三轮收敛，真实浏览器探针验证 spin 后 strong 内选区恢复；上游走 #615（上游版无 batchToggleList，四文件零差异直应用）
-- 用户实测结论：键盘穿透问题在本 fork 无需修复（勿重复移植）
+- fork issue #10（bug）：列表切换幂等取消向前吸并相邻段落——`locateTextOffset` start 端点边界前归属漂移 + `batchToggleList` 先于 cancel 判断执行；修复波及 #615 交付的选区快照体系契约，上游跟进 PR 待定
+- fork issue #11（spike）：ir 模式 list marker 机制探针——li DOM 结构 / data-marker 语义 / Lute `SpinVditorIRDOM` 对 marker 改写的接受度，产出 go/no-go 与实现方案
+- fork issue #12（feat）：ir 模式 list marker 编辑落地（blocked by #11）
