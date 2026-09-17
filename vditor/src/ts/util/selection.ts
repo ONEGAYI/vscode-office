@@ -2,6 +2,7 @@ import { Constants } from "../constants";
 import { isChrome } from "./compatibility";
 import { adjustEditorScrollBy } from "./documentState";
 import { hasClosestBlock, hasClosestByClassName, hasClosestByMatchTag } from "./hasClosest";
+import { locateTextOffset } from "./textOffset";
 
 export const getEditorRange = (vditor: IVditor) => {
     let range: Range;
@@ -121,6 +122,115 @@ export const getEditorTextOffset = (editor: HTMLElement, range?: Range) => {
     } catch {
         return { start: 0, end: 0 };
     }
+};
+
+/** 样式操作选区快照：非 collapsed 选区的编辑器文本偏移，跨 DOM 重建可存活。
+ *  偏移口径不计 ZWSP：它是光标辅助/边界噪声字符，setRangeByWbr 的 Chrome
+ *  分支与边界哨兵都会插入，计入会使 DOM 前后的偏移不可对齐。
+ *  text 为选中内容快照，restore 时校验定位结果，防文本增删导致的静默错位 */
+export interface EditorSelectionSnapshot {
+    start: number;
+    end: number;
+    text: string;
+}
+
+const stripZwspLength = (text: string): number => text.replace(/\u200b/g, "").length;
+
+/** 节点内 strip 偏移 → 真实 offset（跳过节点内的 ZWSP 字符） */
+const toRealNodeOffset = (text: string, stripOffset: number): number => {
+    const textLen = stripZwspLength(text);
+    if (stripOffset >= textLen) {
+        // 端点落在节点 strip 末尾时直接给真实末尾，避免停在尾部 ZWSP 上
+        return text.length;
+    }
+    let seen = 0;
+    for (let i = 0; i < text.length; i++) {
+        if (seen === stripOffset) {
+            return i;
+        }
+        if (text.charAt(i) !== Constants.ZWSP) {
+            seen++;
+        }
+    }
+    return text.length;
+};
+
+const collectEditorTextNodes = (editor: HTMLElement): Text[] => {
+    const textNodes: Text[] = [];
+    const walker = editor.ownerDocument.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+        textNodes.push(walker.currentNode as Text);
+    }
+    return textNodes;
+};
+
+/** 全局文本偏移 → Range（与 captureSelectionOffsets 的 strip 口径互逆）；
+ *  编辑器无文本节点返回 null */
+export const setRangeByEditorTextOffset = (editor: HTMLElement, start: number, end: number): Range | null => {
+    const textNodes = collectEditorTextNodes(editor);
+    const lengths = textNodes.map((node) => stripZwspLength(node.textContent || ""));
+    const startAt = locateTextOffset(lengths, start);
+    const endAt = locateTextOffset(lengths, end);
+    if (!startAt || !endAt) {
+        return null;
+    }
+    try {
+        const startNode = textNodes[startAt.index];
+        const endNode = textNodes[endAt.index];
+        const range = editor.ownerDocument.createRange();
+        range.setStart(startNode, toRealNodeOffset(startNode.textContent || "", startAt.local));
+        range.setEnd(endNode, toRealNodeOffset(endNode.textContent || "", endAt.local));
+        return range;
+    } catch {
+        return null;
+    }
+};
+
+/**
+ * 样式操作前保存非 collapsed 选区偏移（wbr 单点锚无法表达选区范围的替代方案）；
+ * 光标塌缩或选区不在编辑器内时返回 null，调用方维持原 wbr 路径。
+ */
+export const captureSelectionOffsets = (vditor: IVditor): EditorSelectionSnapshot | null => {
+    const editor = vditor[vditor.currentMode].element;
+    const range = getSelectionRangeInEditor(editor);
+    if (!range || range.collapsed || !editor.contains(range.endContainer)) {
+        return null;
+    }
+    try {
+        const preRange = editor.ownerDocument.createRange();
+        preRange.selectNodeContents(editor);
+        preRange.setEnd(range.startContainer, range.startOffset);
+        const start = stripZwspLength(preRange.toString());
+        preRange.setEnd(range.endContainer, range.endOffset);
+        const end = stripZwspLength(preRange.toString());
+        return { start, end, text: range.toString() };
+    } catch {
+        return null;
+    }
+};
+
+/**
+ * DOM 替换后的同步段内按偏移重建非 collapsed 选区（成功时清除残留 wbr，
+ * 使调用方随后的 setRangeByWbr 成为 no-op）；失败返回 false 且不动 wbr，
+ * 调用方保留原 wbr 兜底。shift 用于内联标记插入导致的偏移平移（如 ** 前缀）。
+ * 定位结果与快照 text 不一致（转换过程增删了文本导致错位）时同样返回
+ * false 走 wbr 兜底，宁可退化为塌缩光标也不静默选错内容。
+ */
+export const restoreSelectionOffsets = (vditor: IVditor, saved: EditorSelectionSnapshot | null, shift = 0): boolean => {
+    if (!saved) {
+        return false;
+    }
+    const editor = vditor[vditor.currentMode].element;
+    const range = setRangeByEditorTextOffset(editor, saved.start + shift, saved.end + shift);
+    if (!range || range.collapsed) {
+        return false;
+    }
+    if (stripZwsp(range.toString()) !== stripZwsp(saved.text)) {
+        return false;
+    }
+    setSelectionFocus(range);
+    editor.querySelectorAll("wbr").forEach((wbr) => wbr.remove());
+    return true;
 };
 
 export const getNodePath = (root: Node, node: Node): number[] | undefined => {

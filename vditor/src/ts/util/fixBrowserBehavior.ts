@@ -31,6 +31,8 @@ import {
     setRangeByWbr,
     setSelectionByPosition, setSelectionFocus,
     focusTableCellContent,
+    captureSelectionOffsets,
+    restoreSelectionOffsets,
 } from "./selection";
 import { expandMarkerWithMathSync } from "../ir/expandMarkerSync";
 import { Constants } from "../constants";
@@ -297,11 +299,17 @@ export const insertBeforeBlock = (vditor: IVditor, event: KeyboardEvent, range: 
 
 export const listToggle = (vditor: IVditor, range: Range, type: string, cancel = true) => {
     const itemElement = hasClosestByMatchTag(range.startContainer, "LI");
+    // 块级转换不改变文本内容，偏移零平移；恢复失败时保留 wbr 供调用方
+    // setRangeByWbr 兜底（既有塌缩光标路径）
+    const savedSelection = captureSelectionOffsets(vditor);
     vditor[vditor.currentMode].element.querySelectorAll("wbr").forEach((wbr) => {
         wbr.remove();
     });
     range.insertNode(document.createElement("wbr"));
 
+    // 单块 check 模板在内容前插入一个空格文本（`/> 内容`），选区端点随之 +1；
+    // 切换分支的空格是条件插入不做记账，错位由 restore 的 text 校验兜底
+    let restoreShift = 0;
     if (cancel && itemElement) {
         // 取消
         let pHTML = "";
@@ -327,6 +335,7 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
                 blockElement.insertAdjacentHTML("beforebegin",
                     `<ul data-block="0"><li class="vditor-task"><input type="checkbox" /> ${blockElement.innerHTML}</li></ul>`);
                 blockElement.remove();
+                restoreShift = 1;
             } else if (type === "list") {
                 blockElement.insertAdjacentHTML("beforebegin",
                     `<ul data-block="0"><li>${blockElement.innerHTML}</li></ul>`);
@@ -366,6 +375,7 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
             }
         }
     }
+    restoreSelectionOffsets(vditor, savedSelection, restoreShift);
 };
 
 export const listIndent = (vditor: IVditor, liElement: HTMLElement, range: Range) => {
