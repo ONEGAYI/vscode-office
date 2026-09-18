@@ -12,7 +12,7 @@ import {
 } from "../util/editorCommonEvent";
 import { paste } from "../util/fixBrowserBehavior";
 import { insertPastedCode } from "../util/processCode";
-import { hasClosestByClassName } from "../util/hasClosest";
+import { hasClosestBlock, hasClosestByClassName } from "../util/hasClosest";
 import { isDeleteInput, recordHistoryChange } from "../util/instantHistory";
 import { flushBufferedHistory, trackHistoryInputFromEvent } from "../util/historyInputBuffer";
 import {
@@ -144,12 +144,27 @@ class IR {
             this.composingLock = false;
         });
 
+        let dragInputTimeoutId: number;
+        let dragInputScope: HTMLElement;
         this.element.addEventListener("input", (event: InputEvent) => {
             if (isInsideCodeMirror(event.target) || isInsideCodeBlockChrome(event.target)) {
                 return;
             }
             if (event.inputType === "deleteByDrag" || event.inputType === "insertFromDrop") {
-                // https://github.com/Vanessa219/vditor/issues/801 编辑器内容拖拽问题
+                // Do not replace DOM between the browser's delete and insert steps.
+                // Once the drop finishes, parse the moved markers instead of only saving HTML.
+                const range = getEditorRange(vditor).cloneRange();
+                const block = hasClosestBlock(range.startContainer) || this.element;
+                // A cross-block move changes both the source and the destination.
+                dragInputScope = dragInputScope && dragInputScope !== block ? this.element : block;
+                clearTimeout(dragInputTimeoutId);
+                dragInputTimeoutId = window.setTimeout(() => {
+                    const scope = this.element.contains(dragInputScope) ? dragInputScope : this.element;
+                    dragInputScope = undefined;
+                    if (this.element.contains(range.startContainer)) {
+                        input(vditor, range, true, undefined, scope);
+                    }
+                });
                 return;
             }
             const recordInstantDelete = isDeleteInput(event);
