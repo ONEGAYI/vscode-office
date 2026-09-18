@@ -23,8 +23,9 @@ import {processAfterRender} from "./process";
 import {getMarkdown} from "../markdown/getMarkdown";
 import {fireContentInput} from "../util/saveToolbarState";
 
-export const input = (vditor: IVditor, range: Range, ignoreSpace = false, event?: InputEvent) => {
-    let blockElement = hasClosestBlock(range.startContainer);
+export const input = (vditor: IVditor, range: Range, ignoreSpace = false, event?: InputEvent,
+                      scope?: HTMLElement) => {
+    let blockElement = scope || hasClosestBlock(range.startContainer);
     // 前后可以输入空格
     if (blockElement && !ignoreSpace && blockElement.getAttribute("data-type") !== "code-block") {
         if ((isHrMD(blockElement.innerHTML) && blockElement.previousElementSibling) ||
