@@ -304,6 +304,16 @@ const BATCH_LIST = /^(?:UL|OL)$/;
 
 const listTagOfType = (type: string) => (type === "ordered-list" ? "ol" : "ul");
 
+/** Toolbar-created lists bypass Lute's DOM normalization. Populate the same
+ * marker attributes used by the CSS markers and live marker editor. */
+const setListMarkers = (list: HTMLElement, type: string) => {
+    const ordered = type === "ordered-list";
+    list.setAttribute("data-marker", ordered ? "1." : "*");
+    Array.from(list.children).filter((item) => item.tagName === "LI").forEach((item, index) => {
+        item.setAttribute("data-marker", ordered ? `${index + 1}.` : "*");
+    });
+};
+
 /** 顶层列表块是否已是目标类型：任务列表要求全部 li 已带 checkbox，
  *  普通无序列表要求全部 li 不带（混合态视为待切换） */
 const isTargetListBlock = (block: Element, type: string) => {
@@ -326,8 +336,10 @@ const listItemHTML = (block: HTMLElement, type: string): string => {
         clone.querySelectorAll(".vditor-ir__marker--heading, [data-type='heading-marker']")
             .forEach((marker) => marker.remove());
         const inner = clone.innerHTML.trimLeft();
+        // Checkbox spacing is CSS layout, not document text: inserting spaces
+        // here changes every later text offset and invalidates the selection.
         return type === "check"
-            ? `<li class="vditor-task"><input type="checkbox" /> ${inner}</li>`
+            ? `<li class="vditor-task"><input type="checkbox" />${inner}</li>`
             : `<li>${inner}</li>`;
     }
     return Array.from(block.children).filter((item) => item.tagName === "LI").map((item) => {
@@ -386,7 +398,7 @@ const batchToggleList = (vditor: IVditor, range: Range, type: string): boolean =
     }
     const blocks = Array.from(vditor[vditor.currentMode].element.children);
     let startIndex = blocks.indexOf(startBlock);
-    let endIndex = blocks.indexOf(endBlock);
+    const endIndex = blocks.indexOf(endBlock);
     if (startIndex === -1 || endIndex === -1) {
         return false;
     }
@@ -451,6 +463,7 @@ const batchToggleList = (vditor: IVditor, range: Range, type: string): boolean =
         const marker = type === "ordered-list" ? "1." : "*";
         firstSource.insertAdjacentHTML("beforebegin",
             `<${listTag} data-block="0" data-marker="${marker}">${itemsHTML}</${listTag}>`);
+        setListMarkers(firstSource.previousElementSibling as HTMLElement, type);
         sources.forEach((block) => block.remove());
         itemsHTML = "";
         firstSource = null;
@@ -493,7 +506,7 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
     itemElement = hasClosestByMatchTag(range.startContainer, "LI");
 
     // 单块 check 模板在内容前插入一个空格文本（`/> 内容`），选区端点随之 +1；
-    // 切换分支的空格是条件插入不做记账，错位由 restore 的 text 校验兜底
+    // 已有列表的切换只插入 checkbox 元素，不改变正文文本
     let restoreShift = 0;
     if (cancel && itemElement) {
         // 取消
@@ -532,10 +545,12 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
             } else if (type === "list") {
                 blockElement.insertAdjacentHTML("beforebegin",
                     `<ul data-block="0"><li>${blockElement.innerHTML}</li></ul>`);
+                setListMarkers(blockElement.previousElementSibling as HTMLElement, type);
                 blockElement.remove();
             } else if (type === "ordered-list") {
                 blockElement.insertAdjacentHTML("beforebegin",
                     `<ol data-block="0"><li>${blockElement.innerHTML}</li></ol>`);
+                setListMarkers(blockElement.previousElementSibling as HTMLElement, type);
                 blockElement.remove();
             }
         } else {
@@ -543,7 +558,7 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
             if (type === "check") {
                 itemElement.parentElement.querySelectorAll("li").forEach((item) => {
                     item.insertAdjacentHTML("afterbegin",
-                        `<input type="checkbox" />${item.textContent.indexOf(" ") === 0 ? "" : " "}`);
+                        `<input type="checkbox" />`);
                     item.classList.add("vditor-task");
                 });
             } else {
@@ -564,6 +579,7 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
                 element.setAttribute("data-block", "0");
                 element.setAttribute("data-tight", itemElement.parentElement.getAttribute("data-tight"));
                 element.innerHTML = itemElement.parentElement.innerHTML;
+                setListMarkers(element, type);
                 itemElement.parentElement.parentNode.replaceChild(element, itemElement.parentElement);
             }
         }

@@ -477,7 +477,7 @@ describe('style-selection: WYSIWYG block styles keep selection (W)', { skip: DIS
     }
   });
 
-  it('C2: 无序列表切换为任务列表（toggle 方向插入空格）→ 不错位', async () => {
+  it('C2: 无序列表切换为任务列表 → 保留原文本选区', async () => {
     const c2 = await boot(MD, { mode: 'wysiwyg' });
     try {
       const p = paras(c2)[0];
@@ -506,14 +506,8 @@ describe('style-selection: WYSIWYG block styles keep selection (W)', { skip: DIS
 
       const taskLi = resetEl(c2).querySelector('ul li.vditor-task');
       assert.ok(taskLi, '应切换为任务列表');
-      // 切换分支对每个 li 条件插入一个空格、不做平移记账：restore 的内容
-      // 校验应拒绝等长错位，退化为塌缩光标（不错位优先于必保留）
-      const sel = selOf(c2);
-      if (!sel.isCollapsed) {
-        assert.equal(selText(c2), 'first para', '非塌缩时选区必须覆盖原文本');
-      } else {
-        assert.ok(resetEl(c2).contains(sel.getRangeAt(0).startContainer), '兜底光标应在编辑器内');
-      }
+      assert.equal(selOf(c2).isCollapsed, false, '切换为任务列表后选区不应塌缩');
+      assert.equal(selText(c2), 'first para', '选区必须覆盖原文本');
     } finally {
       c2.window.close();
     }
