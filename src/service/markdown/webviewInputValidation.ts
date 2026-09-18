@@ -147,9 +147,12 @@ const DIAGRAM_SVG_SCRIPT_PATTERN = /<(?:[\w.-]+:)?script\b[\s\S]*?<\/(?:[\w.-]+:
 const DIAGRAM_SVG_SCRIPT_SELF_CLOSING_PATTERN = /<(?:[\w.-]+:)?script\b[^>]*\/>/gi;
 // 分隔符含 `/`：HTML tokenizer 与宽容 XML 解析器都把 `<svg/onload=x>` 当属性分隔
 const DIAGRAM_SVG_EVENT_ATTR_PATTERN = /[\s/]on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>"']+)/gi;
-// href/action/src 具导航或子文档加载语义，srcdoc 直接内嵌标记文档
+// href/action/src 具导航或子文档加载语义，srcdoc 直接内嵌标记文档；
+// 分隔符含 `/`（与事件属性同理，宽容解析器把 <a/href=x> 当属性分隔）
 const DIAGRAM_SVG_URL_ATTR_PATTERN
-    = /\s(?:xlink:href|href|action|src|srcdoc)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;const DIAGRAM_SVG_ANIMATE_PATTERN = /<(animate|set)\b[^>]*(?:\/>|>[\s\S]*?<\/\1\s*>)/gi;
+    = /[\s/](?:xlink:href|href|action|src|srcdoc)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
+// animate/set 匹配需引号感知：属性值内的 ">"（如 values="x>y"）不能截断开标签
+const DIAGRAM_SVG_ANIMATE_PATTERN = /<(animate|set)\b(?:[^>"']|"[^"]*"|'[^']*')*(?:\/>|>[\s\S]*?<\/\1\s*>)/gi;
 const DIAGRAM_SVG_SCRIPT_LEFTOVER_PATTERN = /<(?:[\w.-]+:)?script\b/i;
 const DIAGRAM_SVG_ROOT_PATTERN = /^\s*(?:<\?xml[^>]*\?>\s*)*<svg[\s/>]/i;
 const DIAGRAM_SVG_SAFE_DATA_URL_PATTERN = /^data:image\/(?:png|gif|jpeg|jpg|webp|bmp)/i;
@@ -206,7 +209,7 @@ function stripUntilStable(content: string, pattern: RegExp): string {
 }
 
 const DIAGRAM_SVG_ATTR_VALUE_IN
-    = /\s(xlink:href|href|action|src|srcdoc)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
+    = /[\s/](xlink:href|href|action|src|srcdoc)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
 
 const stripUnsafeUrlAttributes = (content: string): string =>
     content.replace(DIAGRAM_SVG_URL_ATTR_PATTERN, (attribute) => {

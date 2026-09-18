@@ -321,6 +321,17 @@ describe('sanitizeDiagramSvgContent', () => {
         );
     });
 
+    it('strips url attributes in slash-separated form (<a/href=...>)', () => {
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><a/href=javascript:alert(1)><text>click</text></a></svg>'),
+            '<svg><a><text>click</text></a></svg>',
+        );
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><form/action=javascript:alert(1)></form></svg>'),
+            '<svg><form></form></svg>',
+        );
+    });
+
     it('strips unquoted and entity-encoded javascript: urls', () => {
         assert.equal(
             sanitizeDiagramSvgContent('<svg><a href=javascript:alert(1)>x</a></svg>'),
@@ -370,6 +381,17 @@ describe('sanitizeDiagramSvgContent', () => {
         assert.equal(
             sanitizeDiagramSvgContent('<svg><rect><animate attributeName="opacity" from="0" to="1"/></rect></svg>'),
             '<svg><rect><animate attributeName="opacity" from="0" to="1"/></rect></svg>',
+        );
+    });
+
+    it('handles animate tags whose attribute values contain ">" (quote-aware matching)', () => {
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><rect><animate attributeName="href" values="x>y"/></rect></svg>'),
+            '<svg><rect></rect></svg>',
+        );
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><animate attributeName="href" values="x>y">t</animate></svg>'),
+            '<svg></svg>',
         );
     });
 
