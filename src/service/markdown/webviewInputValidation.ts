@@ -145,10 +145,50 @@ const isDiagramUrlPayload = (url: unknown): url is string => {
 const DIAGRAM_SVG_DOCTYPE_PATTERN = /<!DOCTYPE[^>\[]*(?:\[[\s\S]*?\])?[^>]*>/gi;
 const DIAGRAM_SVG_SCRIPT_PATTERN = /<(?:[\w.-]+:)?script\b[\s\S]*?<\/(?:[\w.-]+:)?script\s*>/gi;
 const DIAGRAM_SVG_SCRIPT_SELF_CLOSING_PATTERN = /<(?:[\w.-]+:)?script\b[^>]*\/>/gi;
-const DIAGRAM_SVG_EVENT_ATTR_PATTERN = /\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>"']+)/gi;
-const DIAGRAM_SVG_JS_URL_PATTERN
-    = /\s(?:xlink:)?href\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*')/gi;
+// 分隔符含 `/`：HTML tokenizer 与宽容 XML 解析器都把 `<svg/onload=x>` 当属性分隔
+const DIAGRAM_SVG_EVENT_ATTR_PATTERN = /[\s/]on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>"']+)/gi;
+// href/action/src 具导航或子文档加载语义，srcdoc 直接内嵌标记文档
+const DIAGRAM_SVG_URL_ATTR_PATTERN
+    = /\s(?:xlink:href|href|action|src|srcdoc)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;const DIAGRAM_SVG_ANIMATE_PATTERN = /<(animate|set)\b[^>]*(?:\/>|>[\s\S]*?<\/\1\s*>)/gi;
+const DIAGRAM_SVG_SCRIPT_LEFTOVER_PATTERN = /<(?:[\w.-]+:)?script\b/i;
 const DIAGRAM_SVG_ROOT_PATTERN = /^\s*(?:<\?xml[^>]*\?>\s*)*<svg[\s/>]/i;
+const DIAGRAM_SVG_SAFE_DATA_URL_PATTERN = /^data:image\/(?:png|gif|jpeg|jpg|webp|bmp)/i;
+
+/**
+ * Decodes the ways browsers normalize attribute values before URL scheme
+ * matching: numeric character references (`&#106;`, `&#x6A;`), the handful of
+ * HTML named entities that can smuggle scheme characters, and ASCII tab/LF/CR
+ * that the URL parser strips inside the scheme.
+ */
+function decodeSvgUrlValue(value: string): string {
+    return value
+        .replace(/&#x([0-9a-f]+);?/gi, (_, hex: string) => {
+            const code = parseInt(hex, 16);
+            return code <= 0x10FFFF ? String.fromCodePoint(code) : '';
+        })
+        .replace(/&#(\d+);?/g, (_, dec: string) => {
+            const code = Number(dec);
+            return code <= 0x10FFFF ? String.fromCodePoint(code) : '';
+        })
+        .replace(/&colon;/gi, ':')
+        .replace(/&tab;/gi, '\t')
+        .replace(/&newline;/gi, '\n')
+        .replace(/[\t\n\r]/g, '')
+        .trimStart();
+}
+
+const isSafeUrlValue = (raw: string): boolean => {
+    const decoded = decodeSvgUrlValue(raw);
+    const schemeMatch = /^([a-z][a-z0-9+.-]*):/i.exec(decoded);
+    if (!schemeMatch) {
+        return true;
+    }
+    const scheme = schemeMatch[1].toLowerCase();
+    if (scheme === 'javascript' || scheme === 'vbscript') {
+        return false;
+    }
+    return scheme !== 'data' || DIAGRAM_SVG_SAFE_DATA_URL_PATTERN.test(decoded);
+};
 
 /**
  * Repeatedly applies `pattern` until the output stops changing. Tag-splitting
@@ -165,18 +205,44 @@ function stripUntilStable(content: string, pattern: RegExp): string {
     return current;
 }
 
+const DIAGRAM_SVG_ATTR_VALUE_IN
+    = /\s(xlink:href|href|action|src|srcdoc)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
+
+const stripUnsafeUrlAttributes = (content: string): string =>
+    content.replace(DIAGRAM_SVG_URL_ATTR_PATTERN, (attribute) => {
+        const parts = DIAGRAM_SVG_ATTR_VALUE_IN.exec(attribute);
+        const name = parts ? parts[1].toLowerCase() : '';
+        const value = parts ? (parts[2] ?? parts[3] ?? parts[4] ?? '') : '';
+        if (name === 'srcdoc' || !isSafeUrlValue(value)) {
+            return '';
+        }
+        return attribute;
+    });
+
+const stripHrefAnimatingElements = (content: string): string =>
+    content.replace(DIAGRAM_SVG_ANIMATE_PATTERN, (element) => {
+        const attribute = /attributeName\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(element);
+        const target = attribute ? decodeSvgUrlValue(attribute[1] ?? attribute[2] ?? attribute[3] ?? '') : '';
+        return target.toLowerCase() === 'href' || target.toLowerCase() === 'xlink:href' ? '' : element;
+    });
+
 /**
  * Sanitizes serialized svg markup before it is written to a user-chosen file:
  * strips DOCTYPE declarations, `<script>` elements, `on*` event handler
- * attributes and `javascript:` links, then requires an `<svg>` root element.
+ * attributes, unsafe URL attributes and SMIL elements that animate `href`,
+ * then requires an `<svg>` root element and no surviving script tag.
  * Returns undefined when the result is not an svg document.
  */
 export function sanitizeDiagramSvgContent(svg: string): string | undefined {
     let content = svg.replace(DIAGRAM_SVG_DOCTYPE_PATTERN, '');
+    content = stripUnsafeUrlAttributes(content);
+    content = stripHrefAnimatingElements(content);
     content = stripUntilStable(content, DIAGRAM_SVG_SCRIPT_SELF_CLOSING_PATTERN);
     content = stripUntilStable(content, DIAGRAM_SVG_SCRIPT_PATTERN);
     content = stripUntilStable(content, DIAGRAM_SVG_EVENT_ATTR_PATTERN);
-    content = stripUntilStable(content, DIAGRAM_SVG_JS_URL_PATTERN);
+    if (DIAGRAM_SVG_SCRIPT_LEFTOVER_PATTERN.test(content)) {
+        return undefined;
+    }
     return DIAGRAM_SVG_ROOT_PATTERN.test(content) ? content : undefined;
 }
 

@@ -314,4 +314,72 @@ describe('sanitizeDiagramSvgContent', () => {
         assert.equal(sanitizeDiagramSvgContent('<script>alert(1)</script>'), undefined);
     });
 
+    it('strips event attributes in slash-separated form (<svg/onload=...>)', () => {
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg/onload=alert(1)><rect/></svg>'),
+            '<svg><rect/></svg>',
+        );
+    });
+
+    it('strips unquoted and entity-encoded javascript: urls', () => {
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><a href=javascript:alert(1)>x</a></svg>'),
+            '<svg><a>x</a></svg>',
+        );
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><a href="&#106;avascript:alert(1)">x</a></svg>'),
+            '<svg><a>x</a></svg>',
+        );
+        // URL 解析在 scheme 匹配前剥 ASCII tab/LF/CR
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><a href="java&#9;script:alert(1)">x</a></svg>'),
+            '<svg><a>x</a></svg>',
+        );
+        // HTML 容错解析下属性名大小写不敏感
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><a HREF="javascript:alert(1)">x</a></svg>'),
+            '<svg><a>x</a></svg>',
+        );
+    });
+
+    it('strips javascript:/data: navigation attrs beyond href (action/src) and any srcdoc', () => {
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><foreignObject><form action="javascript:alert(1)"/></foreignObject></svg>'),
+            '<svg><foreignObject><form/></foreignObject></svg>',
+        );
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><foreignObject><iframe src="data:text/html,<b>x</b>"/></foreignObject></svg>'),
+            '<svg><foreignObject><iframe/></foreignObject></svg>',
+        );
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><foreignObject><iframe srcdoc="<b>x</b>"/></foreignObject></svg>'),
+            '<svg><foreignObject><iframe/></foreignObject></svg>',
+        );
+        // 光栅图 data: 内嵌是合法用法，保留
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><image xlink:href="data:image/png;base64,AAAA"/></svg>'),
+            '<svg><image xlink:href="data:image/png;base64,AAAA"/></svg>',
+        );
+    });
+
+    it('removes animate/set elements that target href, keeps other animations', () => {
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><rect><animate attributeName="href" values="javascript:alert(1)"/></rect></svg>'),
+            '<svg><rect></rect></svg>',
+        );
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><rect><animate attributeName="opacity" from="0" to="1"/></rect></svg>'),
+            '<svg><rect><animate attributeName="opacity" from="0" to="1"/></rect></svg>',
+        );
+    });
+
+    it('rejects content with a surviving unclosed script tag', () => {
+        assert.equal(sanitizeDiagramSvgContent('<svg><script>alert(1)'), undefined);
+    });
+
+    it('keeps ordinary https links in exported diagrams', () => {
+        const svg = '<svg xmlns="http://www.w3.org/2000/svg"><a href="https://example.com/docs">docs</a></svg>';
+        assert.equal(sanitizeDiagramSvgContent(svg), svg);
+    });
+
 });
