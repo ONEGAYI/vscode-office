@@ -103,6 +103,9 @@ handler.on("open", async (md) => {
     onOpenCustomCss() {
       handler.emit('openCustomCss')
     },
+    onDiagramDownload(payload) {
+      handler.emit('saveDiagram', payload)
+    },
     input(content) {
       handler.emit("save", restoreWorkspaceBaseUrls(content, workspaceBaseUrl))
     },

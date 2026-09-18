@@ -647,6 +647,19 @@ interface IOptions {
 
     /** 点击打开自定义 CSS 目录按钮时触发 */
     onOpenCustomCss?(): void;
+
+    /** 图表弹窗下载回调；配置后弹窗工具条显示下载按钮，由宿主负责保存文件 */
+    onDiagramDownload?(payload: IDiagramDownloadPayload): void;
+}
+
+/** 图表弹窗经 onDiagramDownload 交给宿主的导出载荷（svg 与 url 二选一） */
+interface IDiagramDownloadPayload {
+    kind: "mermaid" | "plantuml";
+    fileName: string;
+    /** mermaid：序列化后的独立 svg 文档 */
+    svg?: string;
+    /** plantuml：渲染源地址 */
+    url?: string;
 }
 
 interface IEChart {

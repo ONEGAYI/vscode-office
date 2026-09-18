@@ -4,8 +4,8 @@ import { applyMermaidTheme, resolveMermaidTheme } from "../ui/setMermaidTheme";
 import { MERMAID_THEME_PANEL_CLASS } from "../ui/themePickerPanel";
 import { buildMermaidThemePickerPanelHTML, refreshMermaidThemePickerPanel } from "../ui/mermaidThemePickerPanel";
 import { codicon } from "../util/codicon";
-import { svgAsPngUri } from "save-svg-as-png";
-import { showToast } from "../ui/toast";
+import { enterSpecialBlockEdit } from "../codeBlock/codeMirrorManager";
+import { openDiagramPopup } from "./diagramPopup";
 
 const MERMAID_HOST_CLASS = "vditor-mermaid-host";
 const MERMAID_CHROME_CLASS = "vditor-mermaid-chrome";
@@ -108,17 +108,24 @@ const createMermaidChrome = () => {
 
     actions.appendChild(themeWrap);
 
-    const copyBtn = document.createElement("button");
-    copyBtn.type = "button";
-    copyBtn.className = "vditor-mermaid-chrome__copy-btn";
-    copyBtn.setAttribute("aria-label", "Copy as image");
-    copyBtn.innerHTML = `<span class="vditor-mermaid-chrome__copy-icon">${codicon("copy")}</span>`;
-    actions.appendChild(copyBtn);
+    const sourceBtn = document.createElement("button");
+    sourceBtn.type = "button";
+    sourceBtn.className = "vditor-mermaid-chrome__source-btn";
+    sourceBtn.setAttribute("aria-label", window.VditorI18n.editDiagram ?? "Edit diagram source");
+    sourceBtn.innerHTML = `<span class="vditor-mermaid-chrome__source-icon">${codicon("code")}</span>`;
+    actions.appendChild(sourceBtn);
+
+    const popupBtn = document.createElement("button");
+    popupBtn.type = "button";
+    popupBtn.className = "vditor-mermaid-chrome__popup-btn";
+    popupBtn.setAttribute("aria-label", window.VditorI18n.diagramPopup ?? "Open in popup");
+    popupBtn.innerHTML = `<span class="vditor-mermaid-chrome__popup-icon">${codicon("screen-full")}</span>`;
+    actions.appendChild(popupBtn);
 
     toolbar.appendChild(actions);
     chromeRoot.appendChild(toolbar);
 
-    return { chromeRoot, themeWrap, themeTrigger, themePanel, copyBtn };
+    return { chromeRoot, themeWrap, themeTrigger, themePanel, sourceBtn, popupBtn };
 };
 
 export const ensureMermaidHost = (mermaidElement: HTMLElement) => {
@@ -158,6 +165,19 @@ export const ensureMermaidChrome = (vditor: IVditor, mermaidElement: HTMLElement
     host.insertBefore(created.chromeRoot, host.firstChild);
     syncMermaidPanelTheme(chrome.themePanel, theme);
 
+    created.popupBtn.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+    created.popupBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!host.querySelector("svg")) {
+            return;
+        }
+        openDiagramPopup({ vditor, host, kind: "mermaid" });
+    });
+
     created.themeWrap.addEventListener("mousedown", (event) => {
         event.stopPropagation();
     });
@@ -175,29 +195,19 @@ export const ensureMermaidChrome = (vditor: IVditor, mermaidElement: HTMLElement
     });
     bindThemePanel(vditor, chrome);
 
-    created.copyBtn.addEventListener("mousedown", (event) => {
+    created.sourceBtn.addEventListener("mousedown", (event) => {
         event.preventDefault();
         event.stopPropagation();
     });
-    created.copyBtn.addEventListener("click", async (event) => {
+    created.sourceBtn.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        const svg = host.querySelector("svg");
-        if (!svg) return;
-        try {
-            const scale = window.devicePixelRatio || 1;
-            const uri = await svgAsPngUri(svg, { scale });
-            const res = await fetch(uri);
-            const blob = await res.blob();
-            await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-            const icon = created.copyBtn.querySelector(".codicon");
-            if (icon) {
-                icon.className = "codicon codicon-check";
-                setTimeout(() => { icon.className = "codicon codicon-copy"; }, 1500);
-            }
-        } catch (error) {
-            showToast(vditor, window.VditorI18n.copyFailed, 1000, "error");
+        const blockElement = host.closest("[data-type='code-block'], [data-type='math-block']") as HTMLElement | null;
+        if (!blockElement) {
+            return;
         }
+        // 防误触收敛后的显式编辑入口：点击图表本身不再进入编辑
+        enterSpecialBlockEdit(vditor, blockElement);
     });
 };
 

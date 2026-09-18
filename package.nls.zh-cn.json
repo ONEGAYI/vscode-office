@@ -16,6 +16,8 @@
 	"ext.markdown.noChromium": "未找到 Chromium，导出失败。",
 	"ext.markdown.noClipboardImage": "剪贴板中没有图片。",
 	"ext.markdown.linkSchemeBlocked": "已拦截不支持的链接协议：$1",
+	"ext.markdown.saveDiagram": "保存图表",
+	"ext.markdown.diagramExportFailed": "图表导出失败",
 	"ext.markdown.externalFileChange": "$1 已在 VS Code 外被修改。",
 	"ext.markdown.externalSaveFailed": "加载磁盘版本后保存 $1 失败；文档仍标记为已修改，下次保存将重试。",
 	"ext.markdown.externalFileDeleted": "$1 已在 VS Code 外被删除或重命名。你的编辑将保留，下次保存时会重新创建该文件。",

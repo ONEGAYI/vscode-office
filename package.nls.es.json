@@ -15,6 +15,8 @@
 	"ext.markdown.noChromium": "No se encontró Chromium, la exportación falló.",
 	"ext.markdown.noClipboardImage": "No hay imagen en el portapapeles.",
 	"ext.markdown.linkSchemeBlocked": "Enlace con esquema no admitido bloqueado: $1",
+	"ext.markdown.saveDiagram": "Guardar diagrama",
+	"ext.markdown.diagramExportFailed": "Error al exportar el diagrama",
 	"ext.markdown.externalFileChange": "$1 ha sido modificado fuera de VS Code.",
 	"ext.markdown.externalSaveFailed": "No se pudo guardar $1 tras cargar la versión del disco; el documento sigue marcado como modificado y el próximo guardado lo reintentará.",
 	"ext.markdown.externalFileDeleted": "$1 fue eliminado o renombrado fuera de VS Code. Tus ediciones se conservan y volverán a crear el archivo en el próximo guardado.",

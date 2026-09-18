@@ -15,6 +15,8 @@
 	"ext.markdown.noChromium": "Chromium nicht gefunden, Export fehlgeschlagen.",
 	"ext.markdown.noClipboardImage": "Kein Bild in der Zwischenablage.",
 	"ext.markdown.linkSchemeBlocked": "Link mit nicht unterstütztem Schema blockiert: $1",
+	"ext.markdown.saveDiagram": "Diagramm speichern",
+	"ext.markdown.diagramExportFailed": "Diagramm konnte nicht exportiert werden",
 	"ext.markdown.externalFileChange": "$1 wurde außerhalb von VS Code geändert.",
 	"ext.markdown.externalSaveFailed": "$1 konnte nach dem Laden der Datenträgerversion nicht gespeichert werden; das Dokument bleibt als geändert markiert und der nächste Speichervorgang wiederholt den Versuch.",
 	"ext.markdown.externalFileDeleted": "$1 wurde außerhalb von VS Code gelöscht oder umbenannt. Ihre Änderungen bleiben erhalten und erstellen die Datei beim nächsten Speichern neu.",

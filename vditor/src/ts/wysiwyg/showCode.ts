@@ -1,4 +1,4 @@
-import {enterSpecialBlockEdit, focusCodeBlock, isSpecialPreviewBlock} from "../codeBlock/codeMirrorManager";
+import {enterSpecialBlockEdit, focusCodeBlock, isDiagramSpecialBlock, isSpecialPreviewBlock} from "../codeBlock/codeMirrorManager";
 import { enterInlineMathEdit } from "../math/inlineMathCodeMirror";
 import {setSelectionFocus} from "../util/selection";
 
@@ -51,11 +51,15 @@ export const showCode = (previewElement: HTMLElement, vditor: IVditor, first = t
     ) as HTMLElement;
     if (blockElement) {
         if (isSpecialPreviewBlock(blockElement)) {
+            // 图表块点击/键入展开不再进入编辑（防误触），入口收敛到图表工具条的 </> 按钮
+            if (isDiagramSpecialBlock(blockElement)) {
+                return false;
+            }
             enterSpecialBlockEdit(vditor, blockElement);
-            return;
+            return true;
         }
         focusCodeBlock(blockElement, vditor, first);
-        return;
+        return true;
     }
     showInlineCode(previewElement, vditor, first);
 };

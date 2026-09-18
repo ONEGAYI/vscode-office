@@ -10,7 +10,7 @@ declare const plantumlEncoder: {
 const PLANTUML_SOURCE_ATTR = "data-plantuml";
 
 const buildPlantumlUrl = (text: string) =>
-    `http://www.plantuml.com/plantuml/svg/~1${plantumlEncoder.encode(text)}`;
+    `https://www.plantuml.com/plantuml/svg/~1${plantumlEncoder.encode(text)}`;
 
 export const plantumlRender = (
     element: (HTMLElement | Document) = document,
