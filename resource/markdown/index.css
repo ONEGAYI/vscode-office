@@ -286,6 +286,12 @@ body.is-web .vditor-context-menu__item--desktop-only:focus-visible {
     content: none !important;
 }
 
+.vditor-wysiwyg [data-block] > li.vmd-marker-selected[data-marker]:not(.vditor-task)::before,
+.vditor-ir [data-block] > li.vmd-marker-selected[data-marker]:not(.vditor-task)::before {
+    background-color: Highlight;
+    color: HighlightText;
+}
+
 .vditor-wysiwyg .vmd-li-marker,
 .vditor-ir .vmd-li-marker {
     display: inline-block;
