@@ -7,6 +7,7 @@ import { mathRender } from "./ts/markdown/mathRender";
 import { mermaidRender } from "./ts/markdown/mermaidRender";
 import { outlineRender } from "./ts/markdown/outlineRender";
 import { plantumlRender } from "./ts/markdown/plantumlRender";
+import { closeDiagramPopup, openDiagramPopup } from "./ts/markdown/diagramPopup";
 import { previewImage } from "./ts/preview/image";
 import { Constants, VDITOR_VERSION } from "./ts/constants";
 import { Hint } from "./ts/hint/index";
@@ -82,6 +83,8 @@ class Vditor {
     public static mathRender = mathRender;
     public static mermaidRender = mermaidRender;
     public static plantumlRender = plantumlRender;
+    public static openDiagramPopup = openDiagramPopup;
+    public static closeDiagramPopup = closeDiagramPopup;
     public static outlineRender = outlineRender;
     public static setCodeTheme = setCodeTheme;
     public static setEditorTheme = applyEditorTheme;

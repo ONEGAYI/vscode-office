@@ -1,4 +1,5 @@
 import {codicon} from "../util/codicon";
+import {openDiagramPopup} from "./diagramPopup";
 
 const PLANTUML_FIGURE_CLASS = "vditor-plantuml-figure";
 const PLANTUML_CHROME_CLASS = "vditor-plantuml-chrome";
@@ -18,7 +19,7 @@ const openPlantumlUrl = (url: string, event: MouseEvent, link: HTMLAnchorElement
     window.open(url, "_blank");
 };
 
-const createPlantumlChrome = (url: string, vditor?: IVditor) => {
+const createPlantumlChrome = (url: string, vditor?: IVditor, figure?: HTMLElement) => {
     const chromeRoot = document.createElement("div");
     chromeRoot.className = PLANTUML_CHROME_CLASS;
 
@@ -41,6 +42,13 @@ const createPlantumlChrome = (url: string, vditor?: IVditor) => {
     link.innerHTML = `<span class="vditor-plantuml-chrome__link-icon">${codicon("link-external")}</span>`;
     actions.appendChild(link);
 
+    const popupBtn = document.createElement("button");
+    popupBtn.type = "button";
+    popupBtn.className = "vditor-plantuml-chrome__popup-btn";
+    popupBtn.setAttribute("aria-label", window.VditorI18n.diagramPopup || "Open in popup");
+    popupBtn.innerHTML = `<span class="vditor-plantuml-chrome__popup-icon">${codicon("screen-full")}</span>`;
+    actions.appendChild(popupBtn);
+
     toolbar.appendChild(actions);
     chromeRoot.appendChild(toolbar);
 
@@ -52,6 +60,19 @@ const createPlantumlChrome = (url: string, vditor?: IVditor) => {
         event.preventDefault();
         event.stopPropagation();
         openPlantumlUrl(url, event, link, vditor);
+    });
+
+    popupBtn.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+    popupBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!figure || !figure.querySelector("img")) {
+            return;
+        }
+        openDiagramPopup({ vditor, host: figure, kind: "plantuml" });
     });
 
     return chromeRoot;
@@ -73,5 +94,5 @@ export const ensurePlantumlChrome = (plantumlElement: HTMLElement, url: string, 
     }
 
     figure.querySelector(`.${PLANTUML_CHROME_CLASS}`)?.remove();
-    figure.insertBefore(createPlantumlChrome(url, vditor), figure.firstChild);
+    figure.insertBefore(createPlantumlChrome(url, vditor, figure), figure.firstChild);
 };

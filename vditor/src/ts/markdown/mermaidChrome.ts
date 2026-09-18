@@ -6,6 +6,7 @@ import { buildMermaidThemePickerPanelHTML, refreshMermaidThemePickerPanel } from
 import { codicon } from "../util/codicon";
 import { svgAsPngUri } from "save-svg-as-png";
 import { showToast } from "../ui/toast";
+import { openDiagramPopup } from "./diagramPopup";
 
 const MERMAID_HOST_CLASS = "vditor-mermaid-host";
 const MERMAID_CHROME_CLASS = "vditor-mermaid-chrome";
@@ -115,10 +116,17 @@ const createMermaidChrome = () => {
     copyBtn.innerHTML = `<span class="vditor-mermaid-chrome__copy-icon">${codicon("copy")}</span>`;
     actions.appendChild(copyBtn);
 
+    const popupBtn = document.createElement("button");
+    popupBtn.type = "button";
+    popupBtn.className = "vditor-mermaid-chrome__popup-btn";
+    popupBtn.setAttribute("aria-label", window.VditorI18n.diagramPopup || "Open in popup");
+    popupBtn.innerHTML = `<span class="vditor-mermaid-chrome__popup-icon">${codicon("screen-full")}</span>`;
+    actions.appendChild(popupBtn);
+
     toolbar.appendChild(actions);
     chromeRoot.appendChild(toolbar);
 
-    return { chromeRoot, themeWrap, themeTrigger, themePanel, copyBtn };
+    return { chromeRoot, themeWrap, themeTrigger, themePanel, copyBtn, popupBtn };
 };
 
 export const ensureMermaidHost = (mermaidElement: HTMLElement) => {
@@ -157,6 +165,19 @@ export const ensureMermaidChrome = (vditor: IVditor, mermaidElement: HTMLElement
     chromeMap.set(host, chrome);
     host.insertBefore(created.chromeRoot, host.firstChild);
     syncMermaidPanelTheme(chrome.themePanel, theme);
+
+    created.popupBtn.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+    created.popupBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!host.querySelector("svg")) {
+            return;
+        }
+        openDiagramPopup({ vditor, host, kind: "mermaid" });
+    });
 
     created.themeWrap.addEventListener("mousedown", (event) => {
         event.stopPropagation();

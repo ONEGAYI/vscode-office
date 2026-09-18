@@ -1,0 +1,169 @@
+// 图表弹窗预览层：mermaid / plantuml chrome 的 popup 按钮打开
+// 视觉语言对齐 _imagePreview（毛玻璃遮罩 + 胶囊工具条），
+// 工具条按参考实现置于底部中央，拖拽平移时不与工具条冲突
+.vditor-diagram-overlay {
+  --dg-accent: #0a84ff;
+  --dg-toolbar-bg: rgba(255, 255, 255, 0.72);
+  --dg-toolbar-border: rgba(0, 0, 0, 0.08);
+  --dg-toolbar-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --dg-btn-color: rgba(0, 0, 0, 0.72);
+  --dg-btn-hover: rgba(0, 0, 0, 0.06);
+  --dg-backdrop: rgba(0, 0, 0, 0.55);
+
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  opacity: 0;
+  transition: opacity 0.22s cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  &--dark {
+    --dg-accent: #409cff;
+    --dg-toolbar-bg: rgba(44, 44, 46, 0.78);
+    --dg-toolbar-border: rgba(255, 255, 255, 0.12);
+    --dg-toolbar-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.24);
+    --dg-btn-color: rgba(255, 255, 255, 0.88);
+    --dg-btn-hover: rgba(255, 255, 255, 0.1);
+    --dg-backdrop: rgba(0, 0, 0, 0.72);
+  }
+
+  &--visible {
+    opacity: 1;
+
+    .vditor-diagram-overlay__toolbar {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  &--closing {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  &__backdrop {
+    position: absolute;
+    inset: 0;
+    background: var(--dg-backdrop);
+    backdrop-filter: saturate(180%) blur(20px);
+  }
+
+  // 平移画布：覆盖整层，内容居中后以 transform 缩放/平移
+  &__stage {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    cursor: grab;
+  }
+
+  &__stage--dragging {
+    cursor: grabbing;
+  }
+
+  &__content {
+    flex: none;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    user-select: none;
+    will-change: transform;
+
+    // mermaid：复用 .vditor-mermaid-host 的主题变量作用域，
+    // 但屏蔽编辑器内的容器约束（弹窗内按原始尺寸布局）
+    &.vditor-mermaid-host {
+      position: static;
+      max-width: none;
+      margin: 0;
+
+      .language-mermaid {
+        max-width: none;
+        margin: 0;
+        overflow: visible;
+      }
+
+      svg {
+        max-width: none;
+        display: block;
+      }
+    }
+
+    img {
+      display: block;
+      max-width: none;
+      max-height: none;
+      -webkit-user-drag: none;
+    }
+  }
+
+  &__chrome {
+    position: absolute;
+    bottom: 24px;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    display: flex;
+    justify-content: center;
+    padding: 0 20px;
+    pointer-events: none;
+  }
+
+  &__toolbar {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    border-radius: 999px;
+    background: var(--dg-toolbar-bg);
+    border: 1px solid var(--dg-toolbar-border);
+    box-shadow: var(--dg-toolbar-shadow);
+    backdrop-filter: blur(24px) saturate(180%);
+    pointer-events: auto;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.24s cubic-bezier(0.25, 0.1, 0.25, 1) 0.04s,
+      transform 0.24s cubic-bezier(0.25, 0.1, 0.25, 1) 0.04s;
+  }
+
+  &__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--dg-btn-color);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease;
+
+    .codicon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+      line-height: 16px;
+    }
+
+    &:hover {
+      background: var(--dg-btn-hover);
+    }
+
+    &:active {
+      transform: scale(0.94);
+    }
+  }
+
+  &__zoom-label {
+    min-width: 48px;
+    text-align: center;
+    color: var(--dg-btn-color);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    user-select: none;
+  }
+}

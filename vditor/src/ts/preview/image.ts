@@ -10,7 +10,8 @@ export type PreviewImageOptions = {
 let activeOverlay: HTMLElement | null = null;
 let activeKeyDownHandler: ((event: KeyboardEvent) => void) | null = null;
 
-const isDarkPreview = (theme?: string) => {
+/** 供图片预览与图表弹窗共用的暗色环境判定 */
+export const isDarkPreview = (theme?: string) => {
     if (theme === "dark") {
         return true;
     }

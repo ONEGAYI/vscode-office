@@ -12,6 +12,7 @@ import {
     extractUriScheme,
     isOpenExternalLinkAllowed,
     isWebviewCommandAllowed,
+    sanitizeDiagramExportPayload,
     sanitizeImageExtension,
 } from '../service/markdown/webviewInputValidation';
 import {
@@ -467,6 +468,35 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                     vscode.window.showWarningMessage(
                         i18n('ext.markdown.linkSchemeBlocked', extractUriScheme(trimmed) ?? ''));
                 }
+            }
+        }).on("saveDiagram", async (payload: unknown) => {
+            // 图表弹窗下载：载荷按攻击者输入校验后才可落盘或发起服务端请求
+            const diagramExport = sanitizeDiagramExportPayload(payload);
+            if (!diagramExport) {
+                return;
+            }
+            const target = await vscode.window.showSaveDialog({
+                defaultUri: vscode.Uri.joinPath(uri, '..', diagramExport.fileName),
+                filters: { 'SVG': ['svg'] },
+                title: i18n('ext.markdown.saveDiagram'),
+            });
+            if (!target) {
+                return;
+            }
+            try {
+                let bytes: Uint8Array;
+                if (diagramExport.mode === 'svg') {
+                    bytes = Buffer.from(diagramExport.svg, 'utf8');
+                } else {
+                    const response = await fetch(diagramExport.url);
+                    if (!response.ok) {
+                        throw new Error(`plantuml renderer responded ${response.status}`);
+                    }
+                    bytes = new Uint8Array(await response.arrayBuffer());
+                }
+                await vscode.workspace.fs.writeFile(target, bytes);
+            } catch {
+                vscode.window.showWarningMessage(i18n('ext.markdown.diagramExportFailed'));
             }
         }).on("codeMirrorTheme", (theme: string) => {
             const validThemes = [

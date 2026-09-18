@@ -15,6 +15,8 @@
 	"ext.markdown.noChromium": "Chromium introuvable, échec de l'exportation.",
 	"ext.markdown.noClipboardImage": "Aucune image dans le presse-papiers.",
 	"ext.markdown.linkSchemeBlocked": "Lien avec un schéma non pris en charge bloqué : $1",
+	"ext.markdown.saveDiagram": "Enregistrer le diagramme",
+	"ext.markdown.diagramExportFailed": "Échec de l'exportation du diagramme",
 	"ext.markdown.externalFileChange": "$1 a été modifié en dehors de VS Code.",
 	"ext.markdown.externalSaveFailed": "Impossible d'enregistrer $1 après le chargement de la version du disque ; le document reste marqué comme modifié et le prochain enregistrement réessaiera.",
 	"ext.markdown.externalFileDeleted": "$1 a été supprimé ou renommé en dehors de VS Code. Vos modifications sont conservées et recréeront le fichier lors du prochain enregistrement.",

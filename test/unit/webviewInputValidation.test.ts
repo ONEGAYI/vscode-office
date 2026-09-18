@@ -4,6 +4,7 @@ import {
     extractUriScheme,
     isWebviewCommandAllowed,
     isOpenExternalLinkAllowed,
+    sanitizeDiagramExportPayload,
     sanitizeImageExtension,
 } from '../../src/service/markdown/webviewInputValidation.ts';
 
@@ -124,6 +125,101 @@ describe('isWebviewCommandAllowed', () => {
         assert.equal(isWebviewCommandAllowed(''), false);
         assert.equal(isWebviewCommandAllowed(undefined as unknown), false);
         assert.equal(isWebviewCommandAllowed({ id: 'office.markdown.paste' } as unknown), false);
+    });
+
+});
+
+describe('sanitizeDiagramExportPayload', () => {
+
+    it('passes a valid inline svg through as svg mode', () => {
+        const svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>';
+        assert.deepEqual(
+            sanitizeDiagramExportPayload({ svg, fileName: 'flow.svg' }),
+            { mode: 'svg', svg, fileName: 'flow.svg' },
+        );
+    });
+
+    it('accepts svg with leading whitespace and xml prolog', () => {
+        const svg = '<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg"/>';
+        assert.deepEqual(
+            sanitizeDiagramExportPayload({ svg: '  ' + svg, fileName: 'a.svg' }),
+            { mode: 'svg', svg: '  ' + svg, fileName: 'a.svg' },
+        );
+    });
+
+    it('normalizes the file name: strips paths, foreign chars and enforces .svg', () => {
+        assert.equal(
+            sanitizeDiagramExportPayload({ svg: '<svg/>', fileName: '..\\..\\evil.svg' })?.fileName,
+            'evil.svg',
+        );
+        assert.equal(
+            sanitizeDiagramExportPayload({ svg: '<svg/>', fileName: '/tmp/x<>.svg' })?.fileName,
+            'x.svg',
+        );
+        assert.equal(
+            sanitizeDiagramExportPayload({ svg: '<svg/>', fileName: 'diagram' })?.fileName,
+            'diagram.svg',
+        );
+        assert.equal(
+            sanitizeDiagramExportPayload({ svg: '<svg/>', fileName: 'Diagram.SVG' })?.fileName,
+            'Diagram.SVG',
+        );
+    });
+
+    it('falls back to a default file name for missing or unusable values', () => {
+        assert.equal(sanitizeDiagramExportPayload({ svg: '<svg/>' })?.fileName, 'diagram.svg');
+        assert.equal(
+            sanitizeDiagramExportPayload({ svg: '<svg/>', fileName: 42 as unknown })?.fileName,
+            'diagram.svg',
+        );
+        assert.equal(
+            sanitizeDiagramExportPayload({ svg: '<svg/>', fileName: '///' })?.fileName,
+            'diagram.svg',
+        );
+    });
+
+    it('caps the file name length', () => {
+        const long = 'a'.repeat(300);
+        const result = sanitizeDiagramExportPayload({ svg: '<svg/>', fileName: long });
+        assert.equal(result?.fileName.length <= 100 + '.svg'.length, true);
+        assert.equal(result?.fileName.endsWith('.svg'), true);
+    });
+
+    it('rejects svg payloads that are not markup strings', () => {
+        assert.equal(sanitizeDiagramExportPayload({ svg: 'javascript:alert(1)' }), undefined);
+        assert.equal(sanitizeDiagramExportPayload({ svg: '' }), undefined);
+        assert.equal(sanitizeDiagramExportPayload({ svg: null as unknown }), undefined);
+        assert.equal(sanitizeDiagramExportPayload({ svg: 42 as unknown }), undefined);
+        assert.equal(sanitizeDiagramExportPayload({ svg: '<'.repeat(9 * 1024 * 1024) }), undefined);
+    });
+
+    it('accepts only plantuml http(s) urls in url mode', () => {
+        const url = 'http://www.plantuml.com/plantuml/svg/~1SoWkIImgAStDuNBAJrBGLq2rKl8IVCF2VL9PKep2v9LQ18ykv02j4cbcgW7ElRz2kgbvg7cOfP2QebkGgLn9N2g40';
+        assert.deepEqual(
+            sanitizeDiagramExportPayload({ url, fileName: 'uml.svg' }),
+            { mode: 'url', url, fileName: 'uml.svg' },
+        );
+        assert.equal(
+            sanitizeDiagramExportPayload({ url: 'https://plantuml.com/plantuml/svg/~1abc', fileName: 'x.svg' })?.mode,
+            'url',
+        );
+    });
+
+    it('rejects url payloads pointing outside the plantuml renderer', () => {
+        assert.equal(sanitizeDiagramExportPayload({ url: 'https://evil.example.com/x.svg' }), undefined);
+        assert.equal(sanitizeDiagramExportPayload({ url: 'http://localhost:8080/svg' }), undefined);
+        assert.equal(sanitizeDiagramExportPayload({ url: 'file:///etc/passwd' }), undefined);
+        assert.equal(sanitizeDiagramExportPayload({ url: 'vscode://extension/x' }), undefined);
+        assert.equal(sanitizeDiagramExportPayload({ url: 'not a url' }), undefined);
+        assert.equal(sanitizeDiagramExportPayload({ url: '' }), undefined);
+        assert.equal(sanitizeDiagramExportPayload({ url: 'https://' + 'a'.repeat(2100) + '.com' }), undefined);
+    });
+
+    it('rejects ambiguous or empty payloads', () => {
+        assert.equal(sanitizeDiagramExportPayload({}), undefined);
+        assert.equal(sanitizeDiagramExportPayload(null), undefined);
+        assert.equal(sanitizeDiagramExportPayload('svg' as unknown), undefined);
+        assert.equal(sanitizeDiagramExportPayload({ svg: '<svg/>', url: 'https://plantuml.com/x' }), undefined);
     });
 
 });

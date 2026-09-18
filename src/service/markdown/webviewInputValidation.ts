@@ -72,3 +72,86 @@ const WEBVIEW_ALLOWED_COMMANDS: ReadonlySet<string> = new Set(['office.markdown.
 export function isWebviewCommandAllowed(command: unknown): boolean {
     return typeof command === 'string' && WEBVIEW_ALLOWED_COMMANDS.has(command);
 }
+
+/**
+ * Diagram export payloads posted by the diagram popup's download button.
+ * - `svg` carries serialized markup that is written to a user-chosen file
+ * - `url` makes the host fetch and save a remote resource, so only the
+ *   PlantUML renderer origins the webview itself renders from are allowed
+ *   (arbitrary URLs would turn the host into a fetch proxy)
+ */
+export type SanitizedDiagramExport =
+    | { mode: 'svg'; svg: string; fileName: string }
+    | { mode: 'url'; url: string; fileName: string };
+
+const DIAGRAM_SVG_MAX_LENGTH = 8 * 1024 * 1024;
+const DIAGRAM_URL_MAX_LENGTH = 2048;
+const DIAGRAM_FILE_NAME_MAX_LENGTH = 100;
+const DIAGRAM_FILE_NAME_FALLBACK = 'diagram.svg';
+const DIAGRAM_URL_ALLOWED_HOSTS = new Set(['plantuml.com', 'www.plantuml.com']);
+
+/**
+ * Strips anything that could smuggle path structure or markup-hostile
+ * characters out of a webview-supplied file name, and forces the `.svg`
+ * extension the save dialog offers.
+ */
+function sanitizeDiagramFileName(fileName: unknown): string {
+    if (typeof fileName !== 'string') {
+        return DIAGRAM_FILE_NAME_FALLBACK;
+    }
+    const base = fileName.split(/[\\/]/).pop() ?? '';
+    const cleaned = base.replace(/[^\w.\- ()[\]]/g, '').replace(/[.\s]+$/, '');
+    const trimmed = cleaned.slice(0, DIAGRAM_FILE_NAME_MAX_LENGTH);
+    if (!trimmed || trimmed.startsWith('.')) {
+        return DIAGRAM_FILE_NAME_FALLBACK;
+    }
+    return trimmed.toLowerCase().endsWith('.svg') ? trimmed : `${trimmed}.svg`;
+}
+
+const isDiagramSvgPayload = (svg: unknown): svg is string =>
+    typeof svg === 'string'
+    && svg.length > 0
+    && svg.length <= DIAGRAM_SVG_MAX_LENGTH
+    && svg.trimStart().startsWith('<');
+
+const isDiagramUrlPayload = (url: unknown): url is string => {
+    if (typeof url !== 'string' || url.length === 0 || url.length > DIAGRAM_URL_MAX_LENGTH) {
+        return false;
+    }
+    let parsed: URL;
+    try {
+        parsed = new URL(url);
+    } catch {
+        return false;
+    }
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+        && DIAGRAM_URL_ALLOWED_HOSTS.has(parsed.hostname.toLowerCase());
+};
+
+/**
+ * Validates a `saveDiagram` message body from the markdown webview and
+ * returns the normalized export descriptor, or undefined when the payload
+ * is not a single well-formed svg-or-url export. Exactly one of `svg` /
+ * `url` must be present.
+ */
+export function sanitizeDiagramExportPayload(raw: unknown): SanitizedDiagramExport | undefined {
+    if (typeof raw !== 'object' || raw === null) {
+        return undefined;
+    }
+    const { svg, url, fileName } = raw as { svg?: unknown; url?: unknown; fileName?: unknown };
+    const hasSvg = svg !== undefined;
+    const hasUrl = url !== undefined;
+    if (hasSvg === hasUrl) {
+        return undefined;
+    }
+    if (hasSvg) {
+        if (!isDiagramSvgPayload(svg)) {
+            return undefined;
+        }
+        return { mode: 'svg', svg, fileName: sanitizeDiagramFileName(fileName) };
+    }
+    if (!isDiagramUrlPayload(url)) {
+        return undefined;
+    }
+    return { mode: 'url', url, fileName: sanitizeDiagramFileName(fileName) };
+}
