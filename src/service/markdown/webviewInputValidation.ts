@@ -222,12 +222,26 @@ const stripUnsafeUrlAttributes = (content: string): string =>
         return attribute;
     });
 
+const DIAGRAM_SVG_ANIMATE_ATTR_NAME_PATTERN = /attributeName\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g;
+
+/**
+ * Scans every `attributeName=` occurrence inside the matched element — a
+ * decoy occurrence inside a quoted value (`values="attributeName=opacity"`)
+ * must not shadow a real `attributeName="href"` later in the tag.
+ */
+const animateTargetsHref = (element: string): boolean => {
+    for (const match of element.matchAll(DIAGRAM_SVG_ANIMATE_ATTR_NAME_PATTERN)) {
+        const target = decodeSvgUrlValue(match[1] ?? match[2] ?? match[3] ?? '').toLowerCase();
+        if (target === 'href' || target === 'xlink:href') {
+            return true;
+        }
+    }
+    return false;
+};
+
 const stripHrefAnimatingElements = (content: string): string =>
-    content.replace(DIAGRAM_SVG_ANIMATE_PATTERN, (element) => {
-        const attribute = /attributeName\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(element);
-        const target = attribute ? decodeSvgUrlValue(attribute[1] ?? attribute[2] ?? attribute[3] ?? '') : '';
-        return target.toLowerCase() === 'href' || target.toLowerCase() === 'xlink:href' ? '' : element;
-    });
+    content.replace(DIAGRAM_SVG_ANIMATE_PATTERN, (element) =>
+        animateTargetsHref(element) ? '' : element);
 
 /**
  * Sanitizes serialized svg markup before it is written to a user-chosen file:

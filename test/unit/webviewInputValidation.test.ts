@@ -395,6 +395,14 @@ describe('sanitizeDiagramSvgContent', () => {
         );
     });
 
+    it('animate with a decoy attributeName inside a quoted value still gets removed', () => {
+        // 首个 attributeName= 字样落在引号值内时不能遮蔽真名判定
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><animate values="attributeName=opacity" attributeName="href" to="javascript:alert(1)"/></svg>'),
+            '<svg></svg>',
+        );
+    });
+
     it('rejects content with a surviving unclosed script tag', () => {
         assert.equal(sanitizeDiagramSvgContent('<svg><script>alert(1)'), undefined);
     });
