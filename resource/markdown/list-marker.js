@@ -179,6 +179,8 @@
     var marker = li.getAttribute('data-marker') || '';
     var span = document.createElement('span');
     span.className = SPAN_CLASS;
+    // Live marker text is presentation, and disappears during Lute re-rendering.
+    span.setAttribute('data-vditor-selection-ignore', '');
     span.textContent = marker + '\u00A0';
     // A CSS marker click can normalize to the first CONTENT text node, not
     // just (li, 0). Resolve a fresh click on this item against the injected

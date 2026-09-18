@@ -134,12 +134,30 @@ export const processToolbar = (vditor: IVditor, actionBtn: Element, prefix: stri
             const aElement = hasClosestByAttribute(range.startContainer, "data-type", "a") as HTMLElement;
             if (aElement) {
                 const aTextElement = hasClosestByClassName(range.startContainer, "vditor-ir__link");
+                const closingBracket = Array.from(aElement.children).find((child) =>
+                    child.classList.contains("vditor-ir__marker--bracket") && child.textContent === "]");
+                // 链接正文可以由多个文本/样式节点组成，不能只取光标所在的 link span。
+                if (!closingBracket) {
+                    return;
+                }
+                const savedSelection = captureSelectionOffsets(vditor);
                 if (aTextElement) {
                     range.insertNode(document.createElement("wbr"));
-                    aElement.outerHTML = aTextElement.innerHTML;
-                } else {
-                    aElement.outerHTML = aElement.querySelector(".vditor-ir__link").innerHTML + "<wbr>";
                 }
+                while (closingBracket.nextSibling) {
+                    closingBracket.nextSibling.remove();
+                }
+                closingBracket.remove();
+                aElement.firstElementChild.remove();
+                aElement.querySelectorAll(".vditor-ir__link").forEach((label) => {
+                    label.replaceWith(...Array.from(label.childNodes));
+                });
+                if (!aTextElement) {
+                    aElement.appendChild(document.createElement("wbr"));
+                }
+                aElement.outerHTML = aElement.innerHTML;
+                // 取消链接只去掉正文前的 '['，选中的文字仍应保持选中。
+                restoreSelectionOffsets(vditor, savedSelection, -1);
             }
         } else if (commandName === "italic") {
             removeInlineKeepSelection(vditor, range, "em", 1);
