@@ -258,10 +258,9 @@ describe('list-ops: batch list over multi-block selection (B, wysiwyg)', { skip:
       const lis = ols[0].querySelectorAll(':scope > li');
       assert.equal(lis.length, 2);
       const md = olCtx.window.vditor.getValue();
-      // 与既有"ul→ol 切换"路径的序列化一致：所有 li 输出起始编号 1.
-      // （CommonMark 合法，编号由 <ol> 渲染时自动生成）
+      // 每项携带实际显示编号，与 Lute 解析得到的列表 DOM 一致。
       assert.match(md, /^1\. first para$/m);
-      assert.match(md, /^1\. second para$/m);
+      assert.match(md, /^2\. second para$/m);
     } finally {
       olCtx.window.close();
     }
