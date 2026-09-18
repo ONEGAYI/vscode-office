@@ -80,7 +80,8 @@ test('toolbar-created lists display markers and retain multi-paragraph selection
             assert.equal(result.markers.length, count, JSON.stringify(result));
             if (type !== 'check') {
               for (const [index, marker] of result.markers.entries()) {
-                assert.equal(marker.marker, type === 'list' ? '*' : `${index + 1}.`);
+                assert.equal(marker.marker, type === 'list' ? '-' : `${index + 1}.`);
+                if (type === 'list' && !marker.live) assert.equal(marker.before, '"• "', JSON.stringify(result));
                 assert.ok(marker.live?.trim() ||
                   (!['none', 'normal', '" "', '""'].includes(marker.before) && marker.marker) ||
                   marker.native !== 'none', 'list marker must be visible: ' + JSON.stringify(result));
@@ -94,6 +95,18 @@ test('toolbar-created lists display markers and retain multi-paragraph selection
             await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 250)));
             assert.equal(await page.evaluate(() => getSelection().toString().replace(/[\r\n]/g, '')),
               expectedText, `${mode}: ${type} -> ${nextType} retains selection`);
+            if (nextType === 'list') {
+              const selector = `.vditor-${mode} .vditor-reset`;
+              assert.match(await page.evaluate(() => vditor.getValue()), /^- +送上$/m);
+              await page.click(selector + ' li');
+              await page.waitForSelector(selector + ' .vmd-li-marker');
+              assert.equal(await page.$eval(selector + ' .vmd-li-marker', el => el.textContent), '-\u00a0');
+              assert.equal(await page.$eval(selector + ' li', el => getComputedStyle(el, '::before').content), 'none');
+              await page.click(selector + ' > p');
+              await page.waitForFunction(s => !document.querySelector(s + ' .vmd-li-marker'), {}, selector);
+              assert.equal(await page.$eval(selector + ' li', el => getComputedStyle(el, '::before').content), '"• "');
+              assert.match(await page.evaluate(() => vditor.getValue()), /^- +送上$/m);
+            }
           } finally { await page.close(); }
         });
       }

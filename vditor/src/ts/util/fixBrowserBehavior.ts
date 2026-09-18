@@ -308,9 +308,10 @@ const listTagOfType = (type: string) => (type === "ordered-list" ? "ol" : "ul");
  * marker attributes used by the CSS markers and live marker editor. */
 const setListMarkers = (list: HTMLElement, type: string) => {
     const ordered = type === "ordered-list";
-    list.setAttribute("data-marker", ordered ? "1." : "*");
+    const marker = ordered ? "1." : (type === "list" ? "-" : "*");
+    list.setAttribute("data-marker", marker);
     Array.from(list.children).filter((item) => item.tagName === "LI").forEach((item, index) => {
-        item.setAttribute("data-marker", ordered ? `${index + 1}.` : "*");
+        item.setAttribute("data-marker", ordered ? `${index + 1}.` : marker);
     });
 };
 
@@ -460,9 +461,8 @@ const batchToggleList = (vditor: IVditor, range: Range, type: string): boolean =
             return;
         }
         // 带 data-marker 与既有切换路径一致（blockHandle/直播 marker 依赖该属性）
-        const marker = type === "ordered-list" ? "1." : "*";
         firstSource.insertAdjacentHTML("beforebegin",
-            `<${listTag} data-block="0" data-marker="${marker}">${itemsHTML}</${listTag}>`);
+            `<${listTag} data-block="0">${itemsHTML}</${listTag}>`);
         setListMarkers(firstSource.previousElementSibling as HTMLElement, type);
         sources.forEach((block) => block.remove());
         itemsHTML = "";
@@ -571,7 +571,7 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
                 let element;
                 if (type === "list") {
                     element = document.createElement("ul");
-                    element.setAttribute("data-marker", "*");
+                    element.setAttribute("data-marker", "-");
                 } else {
                     element = document.createElement("ol");
                     element.setAttribute("data-marker", "1.");
