@@ -127,6 +127,7 @@ export const getEditorTextOffset = (editor: HTMLElement, range?: Range) => {
 /** 样式操作选区快照：非 collapsed 选区的编辑器文本偏移，跨 DOM 重建可存活。
  *  偏移口径不计 ZWSP：它是光标辅助/边界噪声字符，setRangeByWbr 的 Chrome
  *  分支与边界哨兵都会插入，计入会使 DOM 前后的偏移不可对齐。
+ *  data-vditor-selection-ignore 标记的临时显示内容（如可编辑列表序号）也不计入。
  *  text 为选中内容快照，restore 时校验定位结果，防文本增删导致的静默错位 */
 export interface EditorSelectionSnapshot {
     start: number;
@@ -135,6 +136,22 @@ export interface EditorSelectionSnapshot {
 }
 
 const stripZwspLength = (text: string): number => text.replace(/\u200b/g, "").length;
+
+const SELECTION_IGNORED_SELECTOR = "[data-vditor-selection-ignore]";
+
+const selectionContentText = (range: Range): string => {
+    const container = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE ?
+        range.commonAncestorContainer as Element : range.commonAncestorContainer.parentElement;
+    if (container?.closest(SELECTION_IGNORED_SELECTOR)) {
+        return "";
+    }
+    if (!container?.querySelector(SELECTION_IGNORED_SELECTOR)) {
+        return range.toString();
+    }
+    const content = range.cloneContents();
+    content.querySelectorAll(SELECTION_IGNORED_SELECTOR).forEach((node) => node.remove());
+    return content.textContent || "";
+};
 
 /** 节点内 strip 偏移 → 真实 offset（跳过节点内的 ZWSP 字符） */
 const toRealNodeOffset = (text: string, stripOffset: number): number => {
@@ -159,7 +176,9 @@ const collectEditorTextNodes = (editor: HTMLElement): Text[] => {
     const textNodes: Text[] = [];
     const walker = editor.ownerDocument.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
-        textNodes.push(walker.currentNode as Text);
+        if (!walker.currentNode.parentElement?.closest(SELECTION_IGNORED_SELECTOR)) {
+            textNodes.push(walker.currentNode as Text);
+        }
     }
     return textNodes;
 };
@@ -203,10 +222,10 @@ export const captureSelectionOffsets = (vditor: IVditor): EditorSelectionSnapsho
         const preRange = editor.ownerDocument.createRange();
         preRange.selectNodeContents(editor);
         preRange.setEnd(range.startContainer, range.startOffset);
-        const start = stripZwspLength(preRange.toString());
+        const start = stripZwspLength(selectionContentText(preRange));
         preRange.setEnd(range.endContainer, range.endOffset);
-        const end = stripZwspLength(preRange.toString());
-        return { start, end, text: range.toString() };
+        const end = stripZwspLength(selectionContentText(preRange));
+        return { start, end, text: selectionContentText(range) };
     } catch {
         return null;
     }
@@ -228,7 +247,7 @@ export const restoreSelectionOffsets = (vditor: IVditor, saved: EditorSelectionS
     if (!range || range.collapsed) {
         return false;
     }
-    if (stripZwsp(range.toString()) !== stripZwsp(saved.text)) {
+    if (stripZwsp(selectionContentText(range)) !== stripZwsp(saved.text)) {
         return false;
     }
     setSelectionFocus(range);
