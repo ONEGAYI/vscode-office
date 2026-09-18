@@ -45,7 +45,7 @@ const createPlantumlChrome = (url: string, vditor?: IVditor, figure?: HTMLElemen
     const popupBtn = document.createElement("button");
     popupBtn.type = "button";
     popupBtn.className = "vditor-plantuml-chrome__popup-btn";
-    popupBtn.setAttribute("aria-label", window.VditorI18n.diagramPopup || "Open in popup");
+    popupBtn.setAttribute("aria-label", window.VditorI18n.diagramPopup ?? "Open in popup");
     popupBtn.innerHTML = `<span class="vditor-plantuml-chrome__popup-icon">${codicon("screen-full")}</span>`;
     actions.appendChild(popupBtn);
 

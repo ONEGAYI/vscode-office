@@ -5,6 +5,7 @@ import {
     isWebviewCommandAllowed,
     isOpenExternalLinkAllowed,
     sanitizeDiagramExportPayload,
+    sanitizeDiagramSvgContent,
     sanitizeImageExtension,
 } from '../../src/service/markdown/webviewInputValidation.ts';
 
@@ -215,11 +216,102 @@ describe('sanitizeDiagramExportPayload', () => {
         assert.equal(sanitizeDiagramExportPayload({ url: 'https://' + 'a'.repeat(2100) + '.com' }), undefined);
     });
 
+    it('rejects non-default ports on allowed hosts', () => {
+        assert.equal(
+            sanitizeDiagramExportPayload({ url: 'https://www.plantuml.com:8443/plantuml/svg/~1abc' }),
+            undefined,
+        );
+        // WHATWG URL 将显式默认端口规范化为空字符串，正常 https 链接不受影响
+        assert.equal(
+            sanitizeDiagramExportPayload({ url: 'https://www.plantuml.com:443/plantuml/svg/~1abc' })?.mode,
+            'url',
+        );
+    });
+
     it('rejects ambiguous or empty payloads', () => {
         assert.equal(sanitizeDiagramExportPayload({}), undefined);
         assert.equal(sanitizeDiagramExportPayload(null), undefined);
         assert.equal(sanitizeDiagramExportPayload('svg' as unknown), undefined);
         assert.equal(sanitizeDiagramExportPayload({ svg: '<svg/>', url: 'https://plantuml.com/x' }), undefined);
+    });
+
+    it('returns the sanitized svg, not the raw payload', () => {
+        const result = sanitizeDiagramExportPayload({
+            svg: '<svg onload="alert(1)"><rect/></svg>',
+            fileName: 'x.svg',
+        });
+        assert.deepEqual(result, { mode: 'svg', svg: '<svg><rect/></svg>', fileName: 'x.svg' });
+    });
+
+    it('rejects svg payloads whose root element is not svg', () => {
+        assert.equal(
+            sanitizeDiagramExportPayload({ svg: '<html><body>x</body></html>' }),
+            undefined,
+        );
+    });
+
+});
+
+describe('sanitizeDiagramSvgContent', () => {
+
+    it('keeps clean mermaid-style svg (style + foreignObject) byte-identical', () => {
+        const svg = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<svg id="d-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80" width="120" height="80">',
+            '<style>#d-1 .node rect{fill:#ECECFF}</style>',
+            '<g class="node"><rect width="60" height="40"/></g>',
+            '<foreignObject width="60" height="20"><div xmlns="http://www.w3.org/1999/xhtml">label</div></foreignObject>',
+            '</svg>',
+        ].join('\n');
+        assert.equal(sanitizeDiagramSvgContent(svg), svg);
+    });
+
+    it('strips paired, self-closing, prefixed and uppercase script elements', () => {
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><script>alert(1)</script><rect/></svg>'),
+            '<svg><rect/></svg>',
+        );
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><SCRIPT>alert(1)</SCRIPT><rect/></svg>'),
+            '<svg><rect/></svg>',
+        );
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg><script src="https://evil.example/x.js"/><rect/></svg>'),
+            '<svg><rect/></svg>',
+        );
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg xmlns:x="http://www.w3.org/2000/svg"><x:script>alert(1)</x:script></svg>'),
+            '<svg xmlns:x="http://www.w3.org/2000/svg"></svg>',
+        );
+    });
+
+    it('defeats nested tag-splitting constructions via fixed-point stripping', () => {
+        const nested = '<svg><scr<script></script>ipt>alert(1)</scr<script></script>ipt></svg>';
+        const sanitized = sanitizeDiagramSvgContent(nested);
+        assert.equal(sanitized, '<svg></svg>');
+    });
+
+    it('strips event handler attributes and javascript: links', () => {
+        assert.equal(
+            sanitizeDiagramSvgContent('<svg onload="alert(1)"><a xlink:href="javascript:alert(2)">x</a></svg>'),
+            '<svg><a>x</a></svg>',
+        );
+        assert.equal(
+            sanitizeDiagramSvgContent("<svg><a href='javascript:alert(3)'>x</a></svg>"),
+            '<svg><a>x</a></svg>',
+        );
+    });
+
+    it('drops DOCTYPE declarations (external entity surface)', () => {
+        const withDoctype = '<!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><svg><text>&xxe;</text></svg>';
+        const sanitized = sanitizeDiagramSvgContent(withDoctype);
+        assert.equal(sanitized, '<svg><text>&xxe;</text></svg>');
+    });
+
+    it('rejects markup whose first element is not svg', () => {
+        assert.equal(sanitizeDiagramSvgContent('<html><body>x</body></html>'), undefined);
+        assert.equal(sanitizeDiagramSvgContent('<!DOCTYPE html><html></html>'), undefined);
+        assert.equal(sanitizeDiagramSvgContent('<script>alert(1)</script>'), undefined);
     });
 
 });

@@ -91,6 +91,12 @@ const DIAGRAM_FILE_NAME_FALLBACK = 'diagram.svg';
 const DIAGRAM_URL_ALLOWED_HOSTS = new Set(['plantuml.com', 'www.plantuml.com']);
 
 /**
+ * Download size ceiling shared by inline svg payloads and fetched plantuml
+ * responses, so both write paths fail fast on oversized content.
+ */
+export const DIAGRAM_DOWNLOAD_MAX_LENGTH = DIAGRAM_SVG_MAX_LENGTH;
+
+/**
  * Strips anything that could smuggle path structure or markup-hostile
  * characters out of a webview-supplied file name, and forces the `.svg`
  * extension the save dialog offers.
@@ -125,8 +131,54 @@ const isDiagramUrlPayload = (url: unknown): url is string => {
         return false;
     }
     return (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+        && parsed.port === ''
         && DIAGRAM_URL_ALLOWED_HOSTS.has(parsed.hostname.toLowerCase());
 };
+
+/**
+ * Script/URL execution primitives inside svg markup. `svg` exports are
+ * persisted to disk and may be opened directly in a browser, where these
+ * execute; the mermaid source itself comes from the (untrusted) document.
+ * Namespaced prefixes (`x:script`) resolve to the same SVG script element,
+ * so they are covered as well.
+ */
+const DIAGRAM_SVG_DOCTYPE_PATTERN = /<!DOCTYPE[^>\[]*(?:\[[\s\S]*?\])?[^>]*>/gi;
+const DIAGRAM_SVG_SCRIPT_PATTERN = /<(?:[\w.-]+:)?script\b[\s\S]*?<\/(?:[\w.-]+:)?script\s*>/gi;
+const DIAGRAM_SVG_SCRIPT_SELF_CLOSING_PATTERN = /<(?:[\w.-]+:)?script\b[^>]*\/>/gi;
+const DIAGRAM_SVG_EVENT_ATTR_PATTERN = /\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>"']+)/gi;
+const DIAGRAM_SVG_JS_URL_PATTERN
+    = /\s(?:xlink:)?href\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*')/gi;
+const DIAGRAM_SVG_ROOT_PATTERN = /^\s*(?:<\?xml[^>]*\?>\s*)*<svg[\s/>]/i;
+
+/**
+ * Repeatedly applies `pattern` until the output stops changing. Tag-splitting
+ * payloads like `<scr<script></script>ipt>` reassemble into a live `<script>`
+ * after a single pass, so a fixed point is required for the strip to hold.
+ */
+function stripUntilStable(content: string, pattern: RegExp): string {
+    let previous = '';
+    let current = content;
+    while (previous !== current) {
+        previous = current;
+        current = current.replace(pattern, '');
+    }
+    return current;
+}
+
+/**
+ * Sanitizes serialized svg markup before it is written to a user-chosen file:
+ * strips DOCTYPE declarations, `<script>` elements, `on*` event handler
+ * attributes and `javascript:` links, then requires an `<svg>` root element.
+ * Returns undefined when the result is not an svg document.
+ */
+export function sanitizeDiagramSvgContent(svg: string): string | undefined {
+    let content = svg.replace(DIAGRAM_SVG_DOCTYPE_PATTERN, '');
+    content = stripUntilStable(content, DIAGRAM_SVG_SCRIPT_SELF_CLOSING_PATTERN);
+    content = stripUntilStable(content, DIAGRAM_SVG_SCRIPT_PATTERN);
+    content = stripUntilStable(content, DIAGRAM_SVG_EVENT_ATTR_PATTERN);
+    content = stripUntilStable(content, DIAGRAM_SVG_JS_URL_PATTERN);
+    return DIAGRAM_SVG_ROOT_PATTERN.test(content) ? content : undefined;
+}
 
 /**
  * Validates a `saveDiagram` message body from the markdown webview and
@@ -148,7 +200,11 @@ export function sanitizeDiagramExportPayload(raw: unknown): SanitizedDiagramExpo
         if (!isDiagramSvgPayload(svg)) {
             return undefined;
         }
-        return { mode: 'svg', svg, fileName: sanitizeDiagramFileName(fileName) };
+        const sanitized = sanitizeDiagramSvgContent(svg);
+        if (!sanitized) {
+            return undefined;
+        }
+        return { mode: 'svg', svg: sanitized, fileName: sanitizeDiagramFileName(fileName) };
     }
     if (!isDiagramUrlPayload(url)) {
         return undefined;

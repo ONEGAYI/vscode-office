@@ -119,7 +119,7 @@ const createMermaidChrome = () => {
     const popupBtn = document.createElement("button");
     popupBtn.type = "button";
     popupBtn.className = "vditor-mermaid-chrome__popup-btn";
-    popupBtn.setAttribute("aria-label", window.VditorI18n.diagramPopup || "Open in popup");
+    popupBtn.setAttribute("aria-label", window.VditorI18n.diagramPopup ?? "Open in popup");
     popupBtn.innerHTML = `<span class="vditor-mermaid-chrome__popup-icon">${codicon("screen-full")}</span>`;
     actions.appendChild(popupBtn);
 

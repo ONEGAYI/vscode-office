@@ -71,6 +71,15 @@ const parseTransform = (el) => {
   const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(([\d.]+)\)/.exec(el.style.transform || '');
   return m ? { x: Number(m[1]), y: Number(m[2]), s: Number(m[3]) } : null;
 };
+const approxEqual = (actual, expected) => {
+  assert.ok(actual, 'transform present');
+  for (const k of Object.keys(expected)) {
+    assert.ok(
+      Math.abs(actual[k] - expected[k]) < 1e-9,
+      `${k}: expected ~${expected[k]}, got ${actual[k]}`,
+    );
+  }
+};
 
 const click = (win, el) => el.dispatchEvent(new win.MouseEvent('click', { bubbles: true, cancelable: true }));
 const key = (win, k) => win.document.dispatchEvent(new win.KeyboardEvent('keydown', {
@@ -211,13 +220,12 @@ describe('diagram-popup: popup behavior (P)', { skip: DIST_READY ? false : 'vdit
     ctx.window.Vditor.openDiagramPopup({ host, kind: 'mermaid' });
     wheel(ctx.window, overlayEl(ctx.document), -100, 100, 50);
     // jsdom stage rect 恒零：origin=(100,50)，ratio=1.2 → pan=-0.2*origin
-    assert.deepEqual(parseTransform(contentEl(ctx.document)), { x: -20, y: -10, s: 1.2 });
+    const t = parseTransform(contentEl(ctx.document));
+    approxEqual(t, { x: -20, y: -10, s: 1.2 });
     assert.equal(zoomLabel(ctx.document).textContent, '120%');
     // 反向滚轮回缩，锚点保持内容不动
     wheel(ctx.window, overlayEl(ctx.document), 100, 100, 50);
-    const t = parseTransform(contentEl(ctx.document));
-    assert.ok(Math.abs(t.s - 1) < 1e-9);
-    assert.ok(Math.abs(t.x) < 1e-9 && Math.abs(t.y) < 1e-9);
+    approxEqual(parseTransform(contentEl(ctx.document)), { x: 0, y: 0, s: 1 });
     closePopup();
     host.remove();
   });
@@ -318,6 +326,115 @@ describe('diagram-popup: popup behavior (P)', { skip: DIST_READY ? false : 'vdit
     ctx.window.Vditor.openDiagramPopup({ host, kind: 'mermaid' });
     assert.equal(overlayEl(ctx.document), null);
     host.remove();
+  });
+
+  it('P11: exported svg keeps the root id (embedded #id styles depend on it)', () => {
+    const host = ctx.document.createElement('div');
+    host.className = 'vditor-mermaid-host';
+    const mermaidEl = ctx.document.createElement('div');
+    mermaidEl.className = 'language-mermaid';
+    // mermaid 11 的内嵌样式全部以 `#<renderId>` 前缀，序列化去掉根 id 会使主题样式整体失配
+    mermaidEl.innerHTML = '<svg id="mermaid-xyz" viewBox="0 0 120 80">'
+      + '<style>#mermaid-xyz .node rect{fill:#ECECFF}</style>'
+      + '<g class="node"><rect width="60" height="40"/></g></svg>';
+    host.appendChild(mermaidEl);
+    ctx.document.body.appendChild(host);
+
+    const captured = [];
+    ctx.window.Vditor.openDiagramPopup({
+      host, kind: 'mermaid',
+      vditor: { options: { onDiagramDownload: (p) => captured.push(p) } },
+    });
+    click(ctx.window, toolbarBtn(ctx.document, 'download'));
+    assert.equal(captured.length, 1);
+    assert.match(captured[0].svg, /id="mermaid-xyz"/);
+    assert.match(captured[0].svg, /#mermaid-xyz \.node rect\{fill:#ECECFF\}/);
+    closePopup();
+    host.remove();
+  });
+
+  it('P12: popup takes focus and restores it on close', () => {
+    const probe = ctx.document.createElement('input');
+    probe.id = 'focus-probe';
+    ctx.document.body.appendChild(probe);
+    probe.focus();
+    assert.equal(ctx.document.activeElement, probe);
+
+    const host = buildMermaidHost(ctx.document, true);
+    ctx.window.Vditor.openDiagramPopup({ host, kind: 'mermaid' });
+    const overlay = overlayEl(ctx.document);
+    assert.ok(overlay.contains(ctx.document.activeElement) || ctx.document.activeElement === overlay,
+      'focus moves into the popup so editor keymaps do not receive popup keys');
+
+    ctx.window.Vditor.closeDiagramPopup();
+    assert.equal(ctx.document.activeElement, probe, 'focus restored after close');
+    probe.remove();
+    host.remove();
+  });
+
+  it('P13: clicking a not-yet-rendered block does not close the active popup', () => {
+    const hostA = buildMermaidHost(ctx.document, true);
+    hostA.querySelector('svg').setAttribute('data-origin', 'A');
+    ctx.window.Vditor.openDiagramPopup({ host: hostA, kind: 'mermaid' });
+
+    const hostEmpty = buildMermaidHost(ctx.document, false);
+    ctx.window.Vditor.openDiagramPopup({ host: hostEmpty, kind: 'mermaid' });
+
+    const overlay = overlayEl(ctx.document);
+    assert.ok(overlay, 'active popup survives');
+    assert.ok(contentEl(ctx.document).querySelector('svg[data-origin="A"]'), 'still showing block A');
+    closePopup();
+    hostA.remove();
+    hostEmpty.remove();
+  });
+
+  it('P14: zoom clamps at MIN_SCALE', () => {
+    const host = buildMermaidHost(ctx.document, true);
+    ctx.window.Vditor.openDiagramPopup({ host, kind: 'mermaid' });
+    for (let i = 0; i < 80; i++) {
+      wheel(ctx.window, overlayEl(ctx.document), 100, 0, 0);
+    }
+    approxEqual(parseTransform(contentEl(ctx.document)), { x: 0, y: 0, s: 0.05 });
+    assert.equal(zoomLabel(ctx.document).textContent, '5%');
+    closePopup();
+    host.remove();
+  });
+
+  it('P15: plantuml figure without img does not open', () => {
+    const figure = ctx.document.createElement('div');
+    figure.className = 'vditor-plantuml-figure';
+    ctx.document.body.appendChild(figure);
+    ctx.window.Vditor.openDiagramPopup({ host: figure, kind: 'plantuml' });
+    assert.equal(overlayEl(ctx.document), null);
+    figure.remove();
+  });
+
+  it('P16: document-level listeners added on open are removed on close', async () => {
+    const WATCHED = ['keydown', 'mousemove', 'mouseup'];
+    const doc = ctx.document;
+    const origAdd = doc.addEventListener;
+    const origRemove = doc.removeEventListener;
+    let added = 0;
+    let removed = 0;
+    doc.addEventListener = function (type, ...rest) {
+      if (WATCHED.includes(type)) { added += 1; }
+      return origAdd.call(this, type, ...rest);
+    };
+    doc.removeEventListener = function (type, ...rest) {
+      if (WATCHED.includes(type)) { removed += 1; }
+      return origRemove.call(this, type, ...rest);
+    };
+    try {
+      const host = buildMermaidHost(doc, true);
+      ctx.window.Vditor.openDiagramPopup({ host, kind: 'mermaid' });
+      assert.ok(added >= 3, 'keydown/mousemove/mouseup registered');
+      ctx.window.Vditor.closeDiagramPopup();
+      assert.equal(added, removed, 'every watched listener removed on close');
+      host.remove();
+    } finally {
+      doc.addEventListener = origAdd;
+      doc.removeEventListener = origRemove;
+    }
   });
 
 });

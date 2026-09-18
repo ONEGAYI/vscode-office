@@ -9,10 +9,12 @@ import { Holder } from '../service/markdown/holder';
 import { CustomCssService } from '../service/markdown/customCssService';
 import { MarkdownService } from '../service/markdownService';
 import {
+    DIAGRAM_DOWNLOAD_MAX_LENGTH,
     extractUriScheme,
     isOpenExternalLinkAllowed,
     isWebviewCommandAllowed,
     sanitizeDiagramExportPayload,
+    sanitizeDiagramSvgContent,
     sanitizeImageExtension,
 } from '../service/markdown/webviewInputValidation';
 import {
@@ -473,10 +475,15 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             // 图表弹窗下载：载荷按攻击者输入校验后才可落盘或发起服务端请求
             const diagramExport = sanitizeDiagramExportPayload(payload);
             if (!diagramExport) {
+                vscode.window.showWarningMessage(i18n('ext.markdown.diagramExportFailed'));
                 return;
             }
+            // 非分层 scheme（untitled 等）没有可 join 的父目录，交由对话框取上次位置
+            const defaultUri = uri.scheme === "file"
+                ? vscode.Uri.joinPath(uri, "..", diagramExport.fileName)
+                : undefined;
             const target = await vscode.window.showSaveDialog({
-                defaultUri: vscode.Uri.joinPath(uri, '..', diagramExport.fileName),
+                defaultUri,
                 filters: { 'SVG': ['svg'] },
                 title: i18n('ext.markdown.saveDiagram'),
             });
@@ -488,11 +495,21 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 if (diagramExport.mode === 'svg') {
                     bytes = Buffer.from(diagramExport.svg, 'utf8');
                 } else {
-                    const response = await fetch(diagramExport.url);
+                    // 明文 http 升级到 https；重定向终点不受白名单约束，直接拒绝
+                    const requestUrl = diagramExport.url.replace(/^http:/i, 'https:');
+                    const response = await fetch(requestUrl, { redirect: 'error' });
                     if (!response.ok) {
                         throw new Error(`plantuml renderer responded ${response.status}`);
                     }
-                    bytes = new Uint8Array(await response.arrayBuffer());
+                    const text = await response.text();
+                    if (text.length > DIAGRAM_DOWNLOAD_MAX_LENGTH) {
+                        throw new Error('plantuml renderer response too large');
+                    }
+                    const sanitized = sanitizeDiagramSvgContent(text);
+                    if (!sanitized) {
+                        throw new Error('plantuml renderer returned non-svg content');
+                    }
+                    bytes = Buffer.from(sanitized, 'utf8');
                 }
                 await vscode.workspace.fs.writeFile(target, bytes);
             } catch {

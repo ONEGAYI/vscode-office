@@ -37,6 +37,7 @@ const FALLBACK_PLANTUML_SIZE = { w: 800, h: 600 };
 
 let activeOverlay: HTMLElement | null = null;
 let activeKeyDownHandler: ((event: KeyboardEvent) => void) | null = null;
+let restoreFocusTarget: HTMLElement | null = null;
 
 const clampScale = (scale: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
 
@@ -89,7 +90,7 @@ const readImgIntrinsicSize = (img: HTMLImageElement) => {
 /** 导出用：把编辑器里的 svg 规整为尺寸自含的独立文档 */
 const serializeMermaidSvg = (svg: SVGSVGElement): string | null => {
     const clone = svg.cloneNode(true) as SVGSVGElement;
-    clone.removeAttribute("id");
+    // 根 id 必须保留：mermaid 的内嵌 <style> 规则全部以 `#<renderId>` 前缀，去掉 id 会让主题样式整体失配
     for (const prop of ["max-width", "width", "height"]) {
         clone.style.removeProperty(prop);
     }
@@ -114,6 +115,10 @@ export const closeDiagramPopup = () => {
         document.removeEventListener("keydown", activeKeyDownHandler);
         activeKeyDownHandler = null;
     }
+    if (restoreFocusTarget && document.body.contains(restoreFocusTarget)) {
+        restoreFocusTarget.focus();
+    }
+    restoreFocusTarget = null;
     overlay.dispatchEvent(new Event("vditor-diagram-popup-close"));
     overlay.classList.add(`${OVERLAY_CLASS}--closing`);
     window.setTimeout(() => {
@@ -126,7 +131,6 @@ export const closeDiagramPopup = () => {
 
 export const openDiagramPopup = (source: IDiagramPopupSource) => {
     const { vditor, host, kind } = source;
-    closeDiagramPopup();
 
     let contentClone: HTMLElement | null = null;
     let intrinsicSize: { w: number; h: number } | null = null;
@@ -134,6 +138,7 @@ export const openDiagramPopup = (source: IDiagramPopupSource) => {
     if (kind === "mermaid") {
         const svg = host.querySelector("svg");
         if (!svg) {
+            // 未渲染完成的块直接放弃：先关旧弹窗再守卫会让点击"既无反应又关掉了当前弹窗"
             return;
         }
         const mermaidElement = svg.closest(".language-mermaid") as HTMLElement | null;
@@ -161,6 +166,7 @@ export const openDiagramPopup = (source: IDiagramPopupSource) => {
     }
 
     const i18n = window.VditorI18n;
+    closeDiagramPopup();
     const overlay = document.createElement("div");
     overlay.className = `${OVERLAY_CLASS}${isDarkPreview() ? ` ${OVERLAY_CLASS}--dark` : ""}`;
     overlay.setAttribute("role", "dialog");
@@ -172,6 +178,9 @@ export const openDiagramPopup = (source: IDiagramPopupSource) => {
 
     const stage = document.createElement("div");
     stage.className = STAGE_CLASS;
+    // 接管键盘焦点：CodeMirror 的按键命令在自身 DOM 的 keydown 里直接执行，
+    // document 冒泡阶段的 preventDefault 拦不住方向键同时驱动弹窗与编辑器
+    stage.tabIndex = -1;
 
     const chrome = document.createElement("div");
     chrome.className = `${OVERLAY_CLASS}__chrome`;
@@ -406,9 +415,11 @@ export const openDiagramPopup = (source: IDiagramPopupSource) => {
         document.removeEventListener("mouseup", onDragEnd);
     }, { once: true });
 
+    restoreFocusTarget = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.appendChild(overlay);
     document.body.style.overflow = "hidden";
     activeOverlay = overlay;
+    stage.focus();
 
     requestAnimationFrame(() => {
         overlay.classList.add(`${OVERLAY_CLASS}--visible`);

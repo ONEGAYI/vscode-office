@@ -571,6 +571,8 @@ class Vditor {
 
     /** 销毁编辑器 */
     public destroy() {
+        // 弹窗挂在 document.body 上，不随编辑器 DOM 销毁；显式关闭以释放 document 级监听
+        closeDiagramPopup();
         this.vditor.element.innerHTML = this.vditor.originalInnerHTML;
         this.vditor.element.classList.remove("vditor");
         this.vditor.element.removeAttribute("style");
