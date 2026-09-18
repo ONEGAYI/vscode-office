@@ -242,7 +242,7 @@ body.is-web .vditor-context-menu__item--desktop-only:focus-visible {
    vditor renders list markers natively (browser ol/ul numbering), which
    leaves them unreachable for the caret — you cannot edit "1." into "5.".
    list-marker.js hides the native marker on the editing surface and shows
-   the li's data-marker via ::before instead; when the caret enters the
+   an unordered bullet or the ordered data-marker via ::before; when the caret enters the
    line, a real text span (span.vmd-li-marker) takes over so the marker
    becomes editable, and the ::before is suppressed for that line.
 
@@ -271,12 +271,25 @@ body.is-web .vditor-context-menu__item--desktop-only:focus-visible {
     white-space: pre;
 }
 
+/* Unfocused unordered items use a reading bullet. Their source marker stays
+   in data-marker and is shown verbatim by the editable span on focus. */
+.vditor-wysiwyg ul[data-block] > li[data-marker]:not(.vditor-task)::before,
+.vditor-ir ul[data-block] > li[data-marker]:not(.vditor-task)::before {
+    content: '• ';
+}
+
 /* Caret's line: the real span takes over from the CSS marker. The
    !important is required — plain specificity cannot beat the
    [data-block] attribute selector above. */
 .vditor-wysiwyg li.vmd-marker-live::before,
 .vditor-ir li.vmd-marker-live::before {
     content: none !important;
+}
+
+.vditor-wysiwyg [data-block] > li.vmd-marker-selected[data-marker]:not(.vditor-task)::before,
+.vditor-ir [data-block] > li.vmd-marker-selected[data-marker]:not(.vditor-task)::before {
+    background-color: Highlight;
+    color: HighlightText;
 }
 
 .vditor-wysiwyg .vmd-li-marker,
