@@ -29,7 +29,7 @@
 
 发布到本 fork 的 GitHub Release 并附带 vsix 安装包，不发布市场。
 
-- **版本线**：`<minor>.0-fork.N`，基于上游 minor 起跳（首发 `4.3.0-fork.1`，基于上游 4.2.0 + fork 新功能）；同 minor 内只修 bug 递增 N，同步上游新 minor 时 minor 跟进。tag 用 `v` 前缀（`v4.3.0-fork.1`），打在 fork-main 发布提交上
+- **版本线**：`<semver>-suian`，自 `4.4.0-suian` 起后缀统一为 `-suian`，版本号按正常 semver 递进（新功能进 minor、修复进 patch），不再使用 fork.N 计数、不绑定上游 minor。tag 用 `v` 前缀（`v4.4.0-suian`），打在 fork-main 发布提交上。历史版本线 `4.3.0-fork.1/.2` 见 changelog
 - **package.json 发布标识**：`publisher`=`ONEGAYI`、`displayName` 带 `(Fork)` 后缀、`bugs`/`homepage`/`repository` 指向本 fork；`viewType: cweijan.*` 与依赖 `@cweijan/exceljs` 是运行时标识，**不可改**。改 publisher 后扩展 ID 为 `ONEGAYI.vscode-office`，可与市场版并存、不被市场更新覆盖
 - **打包流程**：`cd vditor && npm run build`（产物复制到 `resource/markdown/dist`，被 .gitignore 忽略但必须进 vsix）→ `npm run test:unit` + `npm run test:webview` → `npm run package`（`vsce package --no-dependencies`，经 `vscode:prepublish` 自动重跑主仓 build）→ 产出 `vscode-office-<version>.vsix`。打包后抽查 vsix 内 `resource/markdown/dist/` 时间戳为本次构建
 - **创建 Release**：changelog 段写入临时文件，`gh release create v<version> --notes-file <file> vscode-office-<version>.vsix`（目标 origin）。本机 gh（Go TLS）对 api.github.com 间歇握手失败且 `HTTPS_PROXY` 救不了时，兜底 `curl` + `gh auth token` 直调 REST API：`POST /repos/ONEGAYI/vscode-office/releases`（JSON payload）→ `POST uploads.github.com/.../releases/<id>/assets?name=<file>`（`--data-binary @file`，`Content-Type: application/octet-stream`），curl/schannel 通道实测可用；命令超时后先查远端是否已建成功再决定重试
