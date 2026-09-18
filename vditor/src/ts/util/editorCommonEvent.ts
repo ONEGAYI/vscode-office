@@ -16,7 +16,7 @@ import { copyTextCutBlock, removeTextCutBlock, resolveTextCutBlock } from "./cut
 import { execAfterRender, paste } from "./fixBrowserBehavior";
 import { insertPastedCode } from "./processCode";
 import { getSelectText } from "./getSelectText";
-import { hasClosestByAttribute, hasClosestByMatchTag } from "./hasClosest";
+import { hasClosestByMatchTag } from "./hasClosest";
 import { matchHotKey } from "./hotKey";
 import { getEditorRange } from "./selection";
 import { saveCacheFocus } from "./cacheFocus";
@@ -172,11 +172,23 @@ export const dropEvent = (vditor: IVditor, editorElement: HTMLElement) => {
         // 选中编辑器中的文字进行拖拽
         event.dataTransfer.setData(Constants.DROP_EDITOR, Constants.DROP_EDITOR);
     });
+    editorElement.addEventListener("dragover", (event: DragEvent) => {
+        if (event.dataTransfer.types.includes(Constants.DROP_EDITOR)) {
+            // Native contenteditable dragover places the caret and enables text insertion.
+            event.stopPropagation();
+        }
+    });
     editorElement.addEventListener("drop",
         (event: ClipboardEvent & { dataTransfer?: DataTransfer, target: HTMLElement }) => {
             if (event.dataTransfer.getData(Constants.DROP_EDITOR)) {
                 // 编辑器内选中文字拖拽
-                execAfterRender(vditor);
+                // Keep the native move, but do not let the webview host cancel it on window.
+                event.stopPropagation();
+                // IR saves after its input handler reparses the final DOM. Saving here
+                // would add an unparsed snapshot and make the first undo appear inert.
+                if (vditor.currentMode !== "ir") {
+                    execAfterRender(vditor);
+                }
             } else if (event.dataTransfer.types.includes("Files") || event.dataTransfer.types.includes("text/html")) {
                 // 外部文件拖入编辑器中或者编辑器内选中文字拖拽
                 paste(vditor, event, {
