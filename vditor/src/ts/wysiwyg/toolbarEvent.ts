@@ -7,71 +7,25 @@ import {renderCodeBlocks} from "../codeBlock/codeMirrorManager";
 import {getEditorRange, setRangeByWbr, setSelectionFocus, captureSelectionOffsets, restoreSelectionOffsets} from "../util/selection";
 import {afterRenderEvent} from "./afterRenderEvent";
 import {genAPopover, highlightToolbarWYSIWYG} from "./highlightToolbarWYSIWYG";
-import {getNextHTML, getPreviousHTML, splitElement} from "./inlineTag";
 
-const cancelBES = (range: Range, vditor: IVditor, commandName: string) => {
-    let element = range.startContainer.parentElement;
-    let jump = false;
-    let lastTagName = "";
-    let lastEndTagName = "";
-
-    const splitHTML = splitElement(range);
-    let lastBeforeHTML = splitHTML.beforeHTML;
-    let lastAfterHTML = splitHTML.afterHTML;
-
-    while (element && !jump) {
-        let tagName = element.tagName;
-        if (tagName === "STRIKE") {
-            tagName = "S";
-        }
-        if (tagName === "I") {
-            tagName = "EM";
-        }
-        if (tagName === "B") {
-            tagName = "STRONG";
-        }
-        if (tagName === "S" || tagName === "STRONG" || tagName === "EM") {
-            let insertHTML = "";
-            let previousHTML = "";
-            let nextHTML = "";
-            if (element.parentElement.getAttribute("data-block") !== "0") {
-                previousHTML = getPreviousHTML(element);
-                nextHTML = getNextHTML(element);
-            }
-
-            if (lastBeforeHTML || previousHTML) {
-                insertHTML = `${previousHTML}<${tagName}>${lastBeforeHTML}</${tagName}>`;
-                lastBeforeHTML = insertHTML;
-            }
-            if ((commandName === "bold" && tagName === "STRONG") ||
-                (commandName === "italic" && tagName === "EM") ||
-                (commandName === "strikeThrough" && tagName === "S")) {
-                // 取消
-                insertHTML += `${lastTagName}${Constants.ZWSP}<wbr>${lastEndTagName}`;
-                jump = true;
-            }
-
-            if (lastAfterHTML || nextHTML) {
-                lastAfterHTML = `<${tagName}>${lastAfterHTML}</${tagName}>${nextHTML}`;
-                insertHTML += lastAfterHTML;
-            }
-
-            if (element.parentElement.getAttribute("data-block") !== "0") {
-                element = element.parentElement;
-                element.innerHTML = insertHTML;
-            } else {
-                element.outerHTML = insertHTML;
-                element = element.parentElement;
-            }
-
-            lastTagName = `<${tagName}>` + lastTagName;
-            lastEndTagName = `</${tagName}>` + lastEndTagName;
-        } else {
-            jump = true;
-        }
+/** 只解开光标所在的这一层内联样式，保留嵌套内容及原光标位置。 */
+const unwrapInlineAtCaret = (range: Range, vditor: IVditor, element: HTMLElement) => {
+    // 首次快捷键的 undo 光标快照可能留下无文本的非 collapsed Range。
+    range.collapse(true);
+    range.insertNode(document.createElement("wbr"));
+    while (element.firstChild) {
+        element.parentNode.insertBefore(element.firstChild, element);
     }
-
+    element.remove();
     setRangeByWbr(vditor.wysiwyg.element, range);
+};
+
+/** 原生命令可能留下元素边界选区；按操作前的文本位置重建，避免随后塌缩。 */
+const execInlineKeepSelection = (vditor: IVditor, commandName: string) => {
+    const savedSelection = captureSelectionOffsets(vditor);
+    restoreSelectionOffsets(vditor, savedSelection);
+    document.execCommand(commandName, false, "");
+    restoreSelectionOffsets(vditor, savedSelection);
 };
 
 export const toolbarEvent = (vditor: IVditor, actionBtn: Element, event: Event) => {
@@ -118,18 +72,24 @@ export const toolbarEvent = (vditor: IVditor, actionBtn: Element, event: Event) 
                 inlineCodeElement = range.startContainer.childNodes[range.startOffset] as HTMLElement;
             }
             if (inlineCodeElement) {
-                const savedSelection = captureSelectionOffsets(vditor);
-                inlineCodeElement.outerHTML = inlineCodeElement.innerHTML.replace(Constants.ZWSP, "") + "<wbr>";
-                if (!restoreSelectionOffsets(vditor, savedSelection)) {
-                    setRangeByWbr(vditor.wysiwyg.element, range);
+                if (range.toString() === "") {
+                    unwrapInlineAtCaret(range, vditor, inlineCodeElement);
+                } else {
+                    const savedSelection = captureSelectionOffsets(vditor);
+                    inlineCodeElement.outerHTML = inlineCodeElement.innerHTML.replace(Constants.ZWSP, "") + "<wbr>";
+                    if (!restoreSelectionOffsets(vditor, savedSelection)) {
+                        setRangeByWbr(vditor.wysiwyg.element, range);
+                    }
                 }
             }
         } else if (commandName === "link") {
-            if (!range.collapsed) {
-                document.execCommand("unlink", false, "");
+            if (range.toString() !== "") {
+                execInlineKeepSelection(vditor, "unlink");
             } else {
-                range.selectNode(range.startContainer.parentElement);
-                document.execCommand("unlink", false, "");
+                const linkElement = hasClosestByMatchTag(range.startContainer, "A");
+                if (linkElement) {
+                    unwrapInlineAtCaret(range, vditor, linkElement);
+                }
             }
         } else if (commandName === "check" || commandName === "list" || commandName === "ordered-list") {
             listToggle(vditor, range, commandName);
@@ -141,9 +101,16 @@ export const toolbarEvent = (vditor: IVditor, actionBtn: Element, event: Event) 
             useHighlight = false;
             actionBtn.classList.remove("vditor-menu--current");
             if (range.toString() === "") {
-                cancelBES(range, vditor, commandName);
+                const selector = commandName === "bold" ? "strong,b" :
+                    commandName === "italic" ? "em,i" : "s,strike";
+                const container = range.startContainer.nodeType === 3 ?
+                    range.startContainer.parentElement : range.startContainer as HTMLElement;
+                const inlineElement = container.closest<HTMLElement>(selector);
+                if (inlineElement && vditor.wysiwyg.element.contains(inlineElement)) {
+                    unwrapInlineAtCaret(range, vditor, inlineElement);
+                }
             } else {
-                document.execCommand(commandName, false, "");
+                execInlineKeepSelection(vditor, commandName);
             }
         }
     } else {
@@ -190,11 +157,16 @@ export const toolbarEvent = (vditor: IVditor, actionBtn: Element, event: Event) 
                 range.setStart(node.firstChild, 1);
                 range.collapse(true);
                 setSelectionFocus(range);
-            } else if (range.startContainer.nodeType === 3) {
+            } else {
+                const savedSelection = captureSelectionOffsets(vditor);
                 const node = document.createElement("code");
-                range.surroundContents(node);
+                node.textContent = range.toString();
+                range.deleteContents();
                 range.insertNode(node);
-                setSelectionFocus(range);
+                if (!restoreSelectionOffsets(vditor, savedSelection)) {
+                    range.selectNodeContents(node);
+                    setSelectionFocus(range);
+                }
             }
             actionBtn.classList.add("vditor-menu--current");
         } else if (commandName === "code") {
@@ -329,7 +301,7 @@ export const toolbarEvent = (vditor: IVditor, actionBtn: Element, event: Event) 
                 range.collapse(true);
                 setSelectionFocus(range);
             } else {
-                document.execCommand(commandName, false, "");
+                execInlineKeepSelection(vditor, commandName);
             }
         }
     }
