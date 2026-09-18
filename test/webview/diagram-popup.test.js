@@ -67,12 +67,17 @@ const stageEl = (doc) => overlayEl(doc)?.querySelector(`.${OVERLAY}__stage`);
 const toolbarBtn = (doc, action) =>
   overlayEl(doc)?.querySelector(`.${OVERLAY}__btn[data-action='${action}']`);
 const zoomLabel = (doc) => overlayEl(doc)?.querySelector(`.${OVERLAY}__zoom-label`);
-const parseTransform = (el) => {
-  const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(([\d.]+)\)/.exec(el.style.transform || '');
-  return m ? { x: Number(m[1]), y: Number(m[2]), s: Number(m[3]) } : null;
+// 缩放写在 svg/img 的 style 尺寸上（矢量重排防糊），transform 只承担平移
+const readView = (doc, baseW = 120, baseH = 80) => {
+  const content = contentEl(doc);
+  const media = content?.querySelector('svg, img');
+  const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(content?.style.transform || '');
+  const w = media ? parseFloat(media.style.width) : NaN;
+  const h = media ? parseFloat(media.style.height) : NaN;
+  return { x: m ? Number(m[1]) : null, y: m ? Number(m[2]) : null, s: w / baseW, w, h };
 };
 const approxEqual = (actual, expected) => {
-  assert.ok(actual, 'transform present');
+  assert.ok(actual, 'view state present');
   for (const k of Object.keys(expected)) {
     assert.ok(
       Math.abs(actual[k] - expected[k]) < 1e-9,
@@ -182,8 +187,8 @@ describe('diagram-popup: popup behavior (P)', { skip: DIST_READY ? false : 'vdit
     assert.ok(content.classList.contains('vditor-mermaid-host'));
     assert.equal(content.getAttribute('data-mermaid-theme'), 'Forest');
     assert.ok(content.querySelector('svg'), 'cloned svg present');
-    // jsdom stage 尺寸恒零 → 初始 fit = 1
-    assert.deepEqual(parseTransform(content), { x: 0, y: 0, s: 1 });
+    // jsdom stage 尺寸恒零 → 初始 fit = 1；缩放落在 svg 实际尺寸上
+    approxEqual(readView(ctx.document), { x: 0, y: 0, s: 1, w: 120, h: 80 });
     closePopup();
     host.remove();
   });
@@ -215,17 +220,16 @@ describe('diagram-popup: popup behavior (P)', { skip: DIST_READY ? false : 'vdit
     host.remove();
   });
 
-  it('P3: wheel zooms anchored at cursor', () => {
+  it('P3: wheel zooms anchored at cursor (svg resized, not transform-scaled)', () => {
     const host = buildMermaidHost(ctx.document, true);
     ctx.window.Vditor.openDiagramPopup({ host, kind: 'mermaid' });
     wheel(ctx.window, overlayEl(ctx.document), -100, 100, 50);
     // jsdom stage rect 恒零：origin=(100,50)，ratio=1.2 → pan=-0.2*origin
-    const t = parseTransform(contentEl(ctx.document));
-    approxEqual(t, { x: -20, y: -10, s: 1.2 });
+    approxEqual(readView(ctx.document), { x: -20, y: -10, s: 1.2, w: 144, h: 96 });
     assert.equal(zoomLabel(ctx.document).textContent, '120%');
     // 反向滚轮回缩，锚点保持内容不动
     wheel(ctx.window, overlayEl(ctx.document), 100, 100, 50);
-    approxEqual(parseTransform(contentEl(ctx.document)), { x: 0, y: 0, s: 1 });
+    approxEqual(readView(ctx.document), { x: 0, y: 0, s: 1, w: 120, h: 80 });
     closePopup();
     host.remove();
   });
@@ -234,14 +238,14 @@ describe('diagram-popup: popup behavior (P)', { skip: DIST_READY ? false : 'vdit
     const host = buildMermaidHost(ctx.document, true);
     ctx.window.Vditor.openDiagramPopup({ host, kind: 'mermaid' });
     key(ctx.window, '+');
-    assert.equal(parseTransform(contentEl(ctx.document)).s, 1.2);
+    assert.equal(readView(ctx.document).s, 1.2);
     key(ctx.window, '-');
-    assert.equal(parseTransform(contentEl(ctx.document)).s, 1);
+    assert.equal(readView(ctx.document).s, 1);
     key(ctx.window, 'ArrowLeft');
     key(ctx.window, 'ArrowDown');
-    assert.deepEqual(parseTransform(contentEl(ctx.document)), { x: -40, y: 40, s: 1 });
+    approxEqual(readView(ctx.document), { x: -40, y: 40, s: 1 });
     key(ctx.window, '0');
-    assert.deepEqual(parseTransform(contentEl(ctx.document)), { x: 0, y: 0, s: 1 });
+    approxEqual(readView(ctx.document), { x: 0, y: 0, s: 1 });
     closePopup();
     host.remove();
   });
@@ -251,7 +255,7 @@ describe('diagram-popup: popup behavior (P)', { skip: DIST_READY ? false : 'vdit
     ctx.window.Vditor.openDiagramPopup({ host, kind: 'mermaid' });
     const stage = stageEl(ctx.document);
     drag(ctx.window, stage, 10, 20, 40, 60);
-    assert.deepEqual(parseTransform(contentEl(ctx.document)), { x: 30, y: 40, s: 1 });
+    approxEqual(readView(ctx.document), { x: 30, y: 40, s: 1 });
     // 拖拽后的落点单击不关闭
     click(ctx.window, stage);
     assert.ok(overlayEl(ctx.document), 'overlay survives click after drag');
@@ -294,7 +298,9 @@ describe('diagram-popup: popup behavior (P)', { skip: DIST_READY ? false : 'vdit
     for (let i = 0; i < 80; i++) {
       wheel(ctx.window, overlayEl(ctx.document), -100, 0, 0);
     }
-    assert.equal(parseTransform(contentEl(ctx.document)).s, 40);
+    const view = readView(ctx.document);
+    assert.equal(view.s, 40);
+    assert.equal(view.w, 4800, 'zoom applied to svg width');
     assert.equal(zoomLabel(ctx.document).textContent, '4000%');
     closePopup();
     host.remove();
@@ -394,7 +400,7 @@ describe('diagram-popup: popup behavior (P)', { skip: DIST_READY ? false : 'vdit
     for (let i = 0; i < 80; i++) {
       wheel(ctx.window, overlayEl(ctx.document), 100, 0, 0);
     }
-    approxEqual(parseTransform(contentEl(ctx.document)), { x: 0, y: 0, s: 0.05 });
+    approxEqual(readView(ctx.document), { x: 0, y: 0, s: 0.05, w: 6, h: 4 });
     assert.equal(zoomLabel(ctx.document).textContent, '5%');
     closePopup();
     host.remove();

@@ -27,9 +27,8 @@ const MIN_SCALE = 0.05;
 const MAX_SCALE = 40;
 const ZOOM_STEP = 1.2;
 const PAN_STEP = 40;
-/** 初始 contain-fit 留白与放大上限（小图不盲目撑满视口） */
+/** 初始 contain-fit 留白：整图可见并尽量占满视口 */
 const FIT_MARGIN = 0.92;
-const FIT_UPSCALE_MAX = 2;
 const CLOSE_ANIMATION_MS = 220;
 
 const FALLBACK_MERMAID_SIZE = { w: 960, h: 540 };
@@ -224,12 +223,22 @@ export const openDiagramPopup = (source: IDiagramPopupSource) => {
     let panX = 0;
     let panY = 0;
 
+    // 缩放必须写到 svg/img 的实际尺寸：svg 带 viewBox 会按目标尺寸矢量重排，
+    // 文字按最终尺寸渲染始终清晰；transform: scale() 会按初始尺寸光栅化后拉伸
+    // （mermaid 的 foreignObject 文字尤其明显），放大必糊。transform 只承担平移，
+    // 锚点缩放数学不受影响——内容中心恒在 stage 中心，pan 仍是相对中心的偏移
     const applyTransform = () => {
-        contentClone!.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+        const media = contentClone!.querySelector("svg, img") as SVGSVGElement | HTMLImageElement | null;
+        if (media) {
+            media.style.removeProperty("max-width");
+            media.style.width = `${Math.round(intrinsicSize!.w * scale)}px`;
+            media.style.height = `${Math.round(intrinsicSize!.h * scale)}px`;
+        }
+        contentClone!.style.transform = `translate(${panX}px, ${panY}px)`;
         zoomLabel.textContent = `${Math.max(1, Math.round(scale * 100))}%`;
     };
 
-    /** 初始 contain-fit：整图可见；小图最多放大到 FIT_UPSCALE_MAX */
+    /** 初始 contain-fit：整图可见并尽量占满视口 */
     const computeFitScale = () => {
         const rect = stage.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) {
@@ -238,7 +247,6 @@ export const openDiagramPopup = (source: IDiagramPopupSource) => {
         return clampScale(Math.min(
             (rect.width * FIT_MARGIN) / intrinsicSize!.w,
             (rect.height * FIT_MARGIN) / intrinsicSize!.h,
-            FIT_UPSCALE_MAX,
         ));
     };
 
