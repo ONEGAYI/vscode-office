@@ -382,12 +382,121 @@
     return null;
   }
 
+  // CSS markers are list structure, not document text. Track whole-item
+  // selections without injecting marker strings into the selected content.
+  function hasSelectedContent(fragment) {
+    fragment.querySelectorAll('.' + SPAN_CLASS + ', wbr').forEach(function (node) { node.remove(); });
+    return fragment.textContent.replace(/\u200b/g, '').trim() !== ''
+      || !!fragment.querySelector('img, video, audio, iframe, hr, table, svg, canvas');
+  }
+
+  function coversContents(range, element) {
+    if (!range.intersectsNode(element)
+      || range.comparePoint(element, 0) === 1
+      || range.comparePoint(element, element.childNodes.length) === -1) return false;
+    var probe = document.createRange();
+    probe.selectNodeContents(element);
+    if (range.comparePoint(element, 0) === -1) {
+      probe.setEnd(range.startContainer, range.startOffset);
+      if (hasSelectedContent(probe.cloneContents())) return false;
+    }
+    probe.selectNodeContents(element);
+    if (range.comparePoint(element, element.childNodes.length) === 1) {
+      probe.setStart(range.endContainer, range.endOffset);
+      if (hasSelectedContent(probe.cloneContents())) return false;
+    }
+    return true;
+  }
+
+  function prepareSelectionReplacement(event) {
+    if (!inEditorMode()) return;
+    var editor = editorEl();
+    if (editor.getAttribute('contenteditable') === 'false'
+      || (event && !editor.contains(event.target))) return false;
+    var sel = document.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+    var range = sel.getRangeAt(0).cloneRange();
+    if (!editor.contains(range.startContainer) || !editor.contains(range.endContainer)) return;
+    var list = Array.from(editor.querySelectorAll('ol[data-block], ul[data-block]')).find(function (candidate) {
+      return candidate.contains(range.startContainer) && candidate.contains(range.endContainer)
+        && coversContents(range, candidate);
+    });
+    var first = closestLi(range.startContainer);
+    var last = closestLi(range.endContainer);
+    if (!list && first && last && first.parentElement === last.parentElement
+      && coversContents(range, first) && coversContents(range, last)) list = first.parentElement;
+    if (!list) return false;
+    if (!first || first.parentElement !== list) first = list.firstElementChild;
+    if (!last || last.parentElement !== list) last = list.lastElementChild;
+    var inner = currentEditor.vditor;
+    inner.undo.addToUndoStack(inner);
+    // Merely widening the native selection is insufficient: Chromium retains
+    // the list shell and can pull the following paragraph into its first item.
+    // Replace the selected structure with a paragraph for the existing input /
+    // paste pipeline to fill, and record the original document for undo first.
+    var paragraph = document.createElement('p');
+    paragraph.setAttribute('data-block', '0');
+    paragraph.innerHTML = '<wbr><br>';
+    var tail = list.cloneNode(false);
+    while (last.nextSibling) tail.appendChild(last.nextSibling);
+    var item = first;
+    while (item) {
+      var next = item.nextSibling;
+      item.remove();
+      if (item === last) break;
+      item = next;
+    }
+    list.insertAdjacentElement('afterend', paragraph);
+    if (tail.children.length) {
+      if (tail.tagName === 'OL') {
+        var marker = tail.firstElementChild.getAttribute('data-marker');
+        if (marker) {
+          tail.setAttribute('data-marker', marker);
+          tail.setAttribute('start', String(parseInt(marker, 10)));
+        }
+      }
+      paragraph.insertAdjacentElement('afterend', tail);
+    }
+    if (!list.children.length) list.remove();
+    range.setStart(paragraph, 0);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    return true;
+  }
+
+  function reportSelectionDelete() {
+    editorEl().dispatchEvent(new InputEvent('input', {
+      bubbles: true, inputType: 'deleteContentBackward', data: null,
+    }));
+  }
+
+  function onBeforeInputCapture(event) {
+    if (event.isComposing) return;
+    if (/^(delete|insert)/.test(event.inputType || '') && prepareSelectionReplacement(event)
+      && event.inputType.indexOf('delete') === 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      reportSelectionDelete();
+    }
+  }
+
+  function onPasteCapture(event) {
+    var data = event.clipboardData;
+    if (event.defaultPrevented || !data || (!data.getData('text/plain') && !data.getData('text/html'))) return;
+    prepareSelectionReplacement(event);
+  }
+
   function onSelectionChange() {
     if (!inEditorMode()) return;
     var editor = editorEl();
 
     var sel = document.getSelection();
     var activeLi = (sel && sel.rangeCount > 0) ? closestLi(sel.anchorNode) : null;
+    var selectedRange = sel && sel.rangeCount && !sel.isCollapsed ? sel.getRangeAt(0) : null;
+    editor.querySelectorAll('li[data-marker]:not(.vditor-task)').forEach(function (li) {
+      li.classList.toggle('vmd-marker-selected', !!selectedRange && coversContents(selectedRange, li));
+    });
 
     // Fold every stale span (previous line, undo-restored snapshots, …) back
     // into the attributes — but never the active line's while the caret is
@@ -523,6 +632,23 @@
     if (!inEditorMode()) return;
     var sel = document.getSelection();
     if (!sel || sel.rangeCount === 0) return;
+
+    if (!sel.isCollapsed) {
+      if (event.key === 'Backspace' || event.key === 'Delete' || event.key === 'Enter'
+        || (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey)) {
+        if (prepareSelectionReplacement(event) && (event.key === 'Backspace' || event.key === 'Delete')) {
+          event.preventDefault();
+          event.stopPropagation();
+          reportSelectionDelete();
+          return;
+        }
+      }
+      // Marker-only editing must never swallow a cross-item selection.
+      var selected = sel.getRangeAt(0);
+      var selectedSpan = caretSpan();
+      if (!selectedSpan || !selectedSpan.contains(selected.startContainer)
+        || !selectedSpan.contains(selected.endContainer)) return;
+    }
 
     var span = caretSpan();
     var li = span ? span.closest('li') : closestLi(sel.anchorNode);
@@ -665,6 +791,8 @@
       document.addEventListener('input', onInputCapture, true);
       document.addEventListener('keydown', onKeydownCapture, true);
       document.addEventListener('mousedown', onMouseDownCapture, true);
+      document.addEventListener('beforeinput', onBeforeInputCapture, true);
+      document.addEventListener('paste', onPasteCapture, true);
     }
     wrapLute();
   }
