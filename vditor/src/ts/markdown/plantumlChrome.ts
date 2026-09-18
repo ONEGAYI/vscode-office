@@ -1,4 +1,5 @@
 import {codicon} from "../util/codicon";
+import {enterSpecialBlockEdit} from "../codeBlock/codeMirrorManager";
 import {openDiagramPopup} from "./diagramPopup";
 
 const PLANTUML_FIGURE_CLASS = "vditor-plantuml-figure";
@@ -42,6 +43,17 @@ const createPlantumlChrome = (url: string, vditor?: IVditor, figure?: HTMLElemen
     link.innerHTML = `<span class="vditor-plantuml-chrome__link-icon">${codicon("link-external")}</span>`;
     actions.appendChild(link);
 
+    // 点击图不再进入编辑（防误触）后的显式入口；无 vditor 的纯预览场景没有编辑态，不渲染
+    let sourceBtn: HTMLButtonElement | null = null;
+    if (vditor) {
+        sourceBtn = document.createElement("button");
+        sourceBtn.type = "button";
+        sourceBtn.className = "vditor-plantuml-chrome__source-btn";
+        sourceBtn.setAttribute("aria-label", window.VditorI18n.editDiagram ?? "Edit diagram source");
+        sourceBtn.innerHTML = `<span class="vditor-plantuml-chrome__source-icon">${codicon("code")}</span>`;
+        actions.appendChild(sourceBtn);
+    }
+
     const popupBtn = document.createElement("button");
     popupBtn.type = "button";
     popupBtn.className = "vditor-plantuml-chrome__popup-btn";
@@ -60,6 +72,20 @@ const createPlantumlChrome = (url: string, vditor?: IVditor, figure?: HTMLElemen
         event.preventDefault();
         event.stopPropagation();
         openPlantumlUrl(url, event, link, vditor);
+    });
+
+    sourceBtn?.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+    sourceBtn?.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const blockElement = figure?.closest("[data-type='code-block'], [data-type='math-block']") as HTMLElement | null;
+        if (!blockElement || !vditor) {
+            return;
+        }
+        enterSpecialBlockEdit(vditor, blockElement);
     });
 
     popupBtn.addEventListener("mousedown", (event) => {

@@ -11,6 +11,7 @@ window.VditorI18n = {
   'close': '关闭',
   'imageOpen': '打开',
   'imagePreview': '图片预览',
+  'editDiagram': '编辑图表源码',
   'diagramPopup': '弹窗预览',
   'zoomIn': '放大',
   'zoomOut': '缩小',

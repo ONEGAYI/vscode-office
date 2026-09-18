@@ -11,6 +11,7 @@ window.VditorI18n = {
   'close': '닫기',
   'imageOpen': '열기',
   'imagePreview': '이미지 미리보기',
+  'editDiagram': '다이어그램 소스 편집',
   'diagramPopup': '팝업으로 열기',
   'zoomIn': '확대',
   'zoomOut': '축소',

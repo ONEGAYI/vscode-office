@@ -11,6 +11,7 @@ window.VditorI18n = {
   'close': 'Закрыть',
   'imageOpen': 'Открыть',
   'imagePreview': 'Просмотр изображения',
+  'editDiagram': 'Изменить исходник диаграммы',
   'diagramPopup': 'Открыть во всплывающем окне',
   'zoomIn': 'Увеличить',
   'zoomOut': 'Уменьшить',

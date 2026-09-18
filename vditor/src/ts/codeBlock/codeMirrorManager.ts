@@ -104,6 +104,11 @@ export const isMathBlockElement = (blockElement: HTMLElement | null) => {
     return blockElement?.getAttribute("data-type") === "math-block";
 };
 
+/** 图表类特殊块（mermaid/plantuml，不含 math）：点击图不进入编辑、编辑态不渲染底部预览 */
+export const isDiagramSpecialBlock = (blockElement: HTMLElement | null) => {
+    return !!blockElement && !isMathBlockElement(blockElement) && isSpecialBlock(blockElement);
+};
+
 /** 数学块预览态：隐藏源码 pre，仅展示渲染结果（源码仅供 Lute / CodeMirror 同步） */
 export const ensureMathBlockPreviewMode = (blockElement: HTMLElement) => {
     if (!isMathBlockElement(blockElement) || blockElement.classList.contains(CM_EDITING_CLASS)) {
@@ -754,12 +759,21 @@ export const enterSpecialBlockEdit = (vditor: IVditor, blockElement: HTMLElement
         }
         return true;
     }
+    const diagramOnly = isDiagramSpecialBlock(block);
     block.classList.add(CM_EDITING_CLASS);
-    ensureSpecialSplitLayout(block);
+    if (!diagramOnly) {
+        ensureSpecialSplitLayout(block);
+    }
     mountCodeMirror(block, vditor, true);
     const binding = bindings.get(block);
     const parts = getBlockParts(block);
-    if (binding && parts?.preview) {
+    if (diagramOnly) {
+        // 图表编辑态不再渲染底部预览（进入入口已收敛到 chrome 的 </> 按钮）；
+        // preview 元素保留但隐藏，退出编辑时由 exitSpecialBlockEdit 恢复显示并重渲染
+        if (parts?.preview) {
+            parts.preview.style.display = "none";
+        }
+    } else if (binding && parts?.preview) {
         rerenderSpecialPreview(parts.preview, vditor, binding.view.state.doc.toString());
     }
     if (focus) {
@@ -858,7 +872,10 @@ export const redoActiveCodeMirror = () => {
 const syncCodeFromView = (binding: CodeMirrorBinding, vditor: IVditor, blockElement: HTMLElement) => {
     binding.syncCode.textContent = binding.view.state.doc.toString();
     if (isSpecialBlock(blockElement) && blockElement.classList.contains(CM_EDITING_CLASS)) {
-        scheduleSpecialPreviewRerender(blockElement, binding, vditor);
+        // 图表类编辑态不渲染底部预览，输入时也无需调度重绘
+        if (!isDiagramSpecialBlock(blockElement)) {
+            scheduleSpecialPreviewRerender(blockElement, binding, vditor);
+        }
         return;
     }
     scheduleSync(binding, vditor);
@@ -1740,6 +1757,10 @@ export const focusWysiwygCodeMirror = focusCodeMirror;
 
 export const focusCodeBlock = (blockElement: HTMLElement, vditor: IVditor, collapseToStart = true) => {
     if (isSpecialPreviewBlock(blockElement)) {
+        // 图表块点击图不再进入编辑（防误触），入口收敛到图表工具条的 </> 按钮
+        if (isDiagramSpecialBlock(blockElement)) {
+            return false;
+        }
         return enterSpecialBlockEdit(vditor, blockElement);
     }
     if (!isCmCodeBlock(blockElement)) {

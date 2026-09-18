@@ -11,6 +11,7 @@ window.VditorI18n = {
   'close': 'Close',
   'imageOpen': 'Open',
   'imagePreview': 'Image preview',
+  'editDiagram': 'Edit diagram source',
   'diagramPopup': 'Open in popup',
   'zoomIn': 'Zoom in',
   'zoomOut': 'Zoom out',

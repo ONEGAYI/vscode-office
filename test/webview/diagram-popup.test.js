@@ -472,6 +472,18 @@ describe('diagram-popup: mermaid chrome integration (M)', { skip: DIST_READY ? f
     holder.remove();
   });
 
+  it('M1b: source toggle replaces copy-as-image in mermaid chrome', async () => {
+    const holder = renderMermaidBlock();
+    await sleep(50);
+    const sourceBtn = holder.querySelector('.vditor-mermaid-chrome__source-btn');
+    assert.ok(sourceBtn, 'source toggle button present');
+    assert.match(sourceBtn.getAttribute('aria-label'), /Edit diagram|编辑图表/);
+    assert.ok(sourceBtn.querySelector('.codicon-code'), 'source toggle uses the </> codicon');
+    assert.equal(holder.querySelector('.vditor-mermaid-chrome__copy-btn'), null,
+      'copy-as-image removed from rendered chrome (编辑态工具栏的复制保留不受影响)');
+    holder.remove();
+  });
+
   it('M2: popup button click without svg is a no-op', async () => {
     const holder = renderMermaidBlock();
     await sleep(50);
@@ -512,6 +524,9 @@ describe('diagram-popup: plantuml chrome integration (U)', { skip: DIST_READY ? 
     }
     const btn = holder.querySelector('.vditor-plantuml-chrome__popup-btn');
     assert.ok(btn, 'popup button present in plantuml chrome');
+    const sourceBtn = holder.querySelector('.vditor-plantuml-chrome__source-btn');
+    assert.ok(sourceBtn, 'source toggle present in plantuml chrome (点击图不再进入编辑后的入口)');
+    assert.match(sourceBtn.getAttribute('aria-label'), /Edit diagram|编辑图表/);
     const img = holder.querySelector('.vditor-plantuml-figure img');
     assert.ok(img, 'renderer img present');
     assert.match(img.getAttribute('src'), /^https?:\/\/www\.plantuml\.com\/plantuml\/svg\//);
