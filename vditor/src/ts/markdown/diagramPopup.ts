@@ -141,10 +141,15 @@ export const openDiagramPopup = (source: IDiagramPopupSource) => {
             return;
         }
         const mermaidElement = svg.closest(".language-mermaid") as HTMLElement | null;
-        contentClone = (mermaidElement ?? svg).cloneNode(true) as HTMLElement;
+        const cloneSource = mermaidElement ?? svg;
+        contentClone = cloneSource.cloneNode(true) as HTMLElement;
         contentClone.classList.add(CONTENT_CLASS);
         // 复用 host 的 mermaid 主题变量（--mermaid-bg 等）作用域
         contentClone.classList.add("vditor-mermaid-host");
+        // 克隆后 .language-mermaid 与 .vditor-mermaid-host 同元素，后代选择器的容器
+        // 背景规则不再命中，且弹窗挂在 body 下拿不到 --toolbar-background-color 等变量，
+        // 底色按编辑器内实际计算值固化，避免图表透明背衬在毛玻璃遮罩上
+        contentClone.style.backgroundColor = getComputedStyle(cloneSource).backgroundColor;
         const theme = host.getAttribute("data-mermaid-theme");
         if (theme) {
             contentClone.setAttribute("data-mermaid-theme", theme);
