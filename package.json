@@ -686,7 +686,7 @@
 					"vscode-office.markdownBlockLineNumbers": {
 						"type": "boolean",
 						"default": true,
-						"markdownDescription": "Show a line number to the left of every top-level block's first line (headings, paragraphs, lists, tables, code blocks…). Each number is the block-start line within the editor's current markdown text (not the file on disk): vditor re-serializes blank lines while editing, so numbers can differ from the saved file by a few lines. IR and WYSIWYG modes only."
+						"markdownDescription": "Show the VS Code document source line beside each top-level block (headings, paragraphs, lists, tables, code blocks…). Includes unsaved changes synchronized to the document. Numbers are temporarily hidden while local edits await synchronization. IR and WYSIWYG modes only."
 					},
 					"vscode-office.markdownHeadingBadges": {
 						"type": "boolean",

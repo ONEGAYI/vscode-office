@@ -246,7 +246,7 @@ const isInsideCodeMirrorTarget = (target) => {
     return !!node?.closest?.(".vditor-code-block--cm .cm-editor");
 };
 
-export const bindShortcut = (handler, editor, workspaceBaseUrl = '') => {
+export const bindShortcut = (handler, editor, workspaceBaseUrl = '', saveMarkdown) => {
     const getMarkdownValue = createMarkdownValueReader(() => editor, workspaceBaseUrl);
     let _exec = document.execCommand.bind(document)
     document.execCommand = (cmd, ...args) => {
@@ -269,7 +269,8 @@ export const bindShortcut = (handler, editor, workspaceBaseUrl = '') => {
         if (isCompose(e)) {
             switch (e.code) {
                 case 'KeyS':
-                    vscodeEvent.emit("doSave", getMarkdownValue());
+                    if (saveMarkdown) saveMarkdown();
+                    else handler.emit("doSave", getMarkdownValue());
                     editor.markSaved();
                     e.stopPropagation();
                     e.preventDefault();
