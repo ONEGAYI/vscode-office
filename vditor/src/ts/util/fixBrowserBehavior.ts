@@ -150,13 +150,6 @@ const dedupeAdjacentEmptyParagraphs = (element: HTMLElement) => {
     }
 };
 
-const createParagraphFromListItem = (liElement: HTMLElement) => {
-    const paragraphElement = document.createElement("p");
-    paragraphElement.setAttribute("data-block", "0");
-    paragraphElement.innerHTML = `<wbr>${liElement.innerHTML}`;
-    return paragraphElement;
-};
-
 const replaceListItemWithEmptyBlock = (liElement: HTMLElement) => {
     const listElement = liElement.parentElement;
     const beforeListElement = listElement.cloneNode(false) as HTMLElement;
@@ -361,8 +354,34 @@ const listItemHTML = (block: HTMLElement, type: string): string => {
     }).join("");
 };
 
+/** 将紧凑列表项的行内内容包成段落，保留已有块的顺序及行首展示控件。 */
+const wrapListItemParagraphs = (item: HTMLElement) => {
+    let paragraph: HTMLElement = null;
+    Array.from(item.childNodes).forEach((node) => {
+        const element = node.nodeType === Node.ELEMENT_NODE ? node as HTMLElement : null;
+        if (element && (element.hasAttribute("data-vditor-selection-ignore") || element.tagName === "INPUT")) {
+            return;
+        }
+        if (element && (element.hasAttribute("data-block")
+            || /^(?:P|UL|OL|BLOCKQUOTE|PRE|TABLE|DIV|H[1-6]|HR)$/.test(element.tagName))) {
+            paragraph = null;
+            return;
+        }
+        if (!paragraph) {
+            if (node.nodeType === Node.TEXT_NODE && !node.textContent.trim()) {
+                return;
+            }
+            paragraph = item.ownerDocument.createElement("p");
+            paragraph.setAttribute("data-block", "0");
+            item.insertBefore(paragraph, node);
+        }
+        paragraph.appendChild(node);
+    });
+};
+
 /** 取消目标列表：每个 li 回段落（去 checkbox），列表移除 */
 const unwrapListBlock = (block: HTMLElement) => {
+    const parentItem = block.parentElement.tagName === "LI" ? block.parentElement : null;
     let html = "";
     Array.from(block.children).filter((item) => item.tagName === "LI").forEach((item) => {
         const li = item.cloneNode(true) as HTMLElement;
@@ -371,18 +390,60 @@ const unwrapListBlock = (block: HTMLElement) => {
             input.remove();
         }
         li.classList.remove("vditor-task");
-        // 块级子元素（嵌套列表/松散列表的 p）不能拼进 <p>：HTML 解析器按
-        // p 的内容模型会拆散它并留下空段落，提升为兄弟块
-        const nested = Array.from(li.children).filter((child) => /^(?:UL|OL|P)$/.test(child.tagName));
-        nested.forEach((child) => child.remove());
-        const inline = li.innerHTML.trimLeft();
-        if (inline) {
-            html += `<p data-block="0">${inline}</p>`;
-        }
-        html += nested.map((child) => child.outerHTML).join("");
+        // 展示控件不能成为取消后的正文；保留其中的光标锚以供调用方恢复。
+        li.querySelectorAll("[data-vditor-selection-ignore]").forEach((marker) => {
+            marker.replaceWith(...Array.from(marker.querySelectorAll("wbr")));
+        });
+        li.innerHTML = li.innerHTML.trimLeft();
+        wrapListItemParagraphs(li);
+        html += li.innerHTML;
     });
     block.insertAdjacentHTML("beforebegin", html);
     block.remove();
+    if (parentItem) {
+        // 子列表变为父项内的独立段落。仅改 data-tight 不够：父项的裸文本
+        // 也须包成 p，否则 Lute 会把它和新段落拼为同一段。
+        const parentList = parentItem.parentElement;
+        parentList.setAttribute("data-tight", "false");
+        Array.from(parentList.children).filter((item) => item.tagName === "LI")
+            .forEach((item) => wrapListItemParagraphs(item as HTMLElement));
+    }
+};
+
+/** 只取消当前项：前后兄弟仍为列表，段落留在原位置和原父级。 */
+const unwrapListItem = (item: HTMLElement) => {
+    const list = item.parentElement;
+    if (item.previousElementSibling) {
+        const before = list.cloneNode(false) as HTMLElement;
+        list.before(before);
+        while (list.firstChild !== item) before.appendChild(list.firstChild);
+    }
+    if (item.nextElementSibling) {
+        const after = list.cloneNode(false) as HTMLElement;
+        list.after(after);
+        while (item.nextSibling) after.appendChild(item.nextSibling);
+        if (after.tagName === "OL") {
+            const marker = after.firstElementChild.getAttribute("data-marker");
+            const start = parseInt(marker, 10);
+            if (!isNaN(start)) {
+                after.setAttribute("start", String(start));
+                after.setAttribute("data-marker", marker);
+            }
+        }
+    }
+    unwrapListBlock(list);
+};
+
+const atListContentStart = (item: HTMLElement, range: Range) => {
+    // undo 的 wbr 快照可能把塌缩光标表达成跨空文本节点的零长度范围。
+    if (range.toString() !== "") return false;
+    const prefix = range.cloneRange();
+    prefix.selectNodeContents(item);
+    prefix.setEnd(range.startContainer, range.startOffset);
+    const fragment = prefix.cloneContents();
+    fragment.querySelectorAll("[data-vditor-selection-ignore], wbr, input").forEach((node) => node.remove());
+    return fragment.textContent.replace(new RegExp(Constants.ZWSP, "g"), "") === ""
+        && !fragment.querySelector("img, br, hr, ul, ol, table, pre");
 };
 
 /**
@@ -509,17 +570,7 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
     // 已有列表的切换只插入 checkbox 元素，不改变正文文本
     let restoreShift = 0;
     if (cancel && itemElement) {
-        // 取消
-        let pHTML = "";
-        for (let i = 0; i < itemElement.parentElement.childElementCount; i++) {
-            const inputElement = itemElement.parentElement.children[i].querySelector("input");
-            if (inputElement) {
-                inputElement.remove();
-            }
-            pHTML += `<p data-block="0">${itemElement.parentElement.children[i].innerHTML.trimLeft()}</p>`;
-        }
-        itemElement.parentElement.insertAdjacentHTML("beforebegin", pHTML);
-        itemElement.parentElement.remove();
+        unwrapListBlock(itemElement.parentElement);
     } else {
         if (!itemElement) {
             // 添加
@@ -888,17 +939,11 @@ export const fixList = (range: Range, vditor: IVditor, pElement: HTMLElement | f
         }
 
         if (!isCtrl(event) && !event.shiftKey && !event.altKey && event.key === "Backspace" &&
-            !liElement.previousElementSibling && range.toString() === "" &&
-            getSelectPosition(liElement, vditor[vditor.currentMode].element, range).start === 0) {
-            // 光标位于点和第一个字符中间时，无法删除 li 元素
-            const paragraphElement = createParagraphFromListItem(liElement);
-            if (liElement.nextElementSibling) {
-                liElement.parentElement.insertAdjacentElement("beforebegin", paragraphElement);
-                liElement.remove();
-            } else {
-                liElement.parentElement.replaceWith(paragraphElement);
-            }
-            dedupeAdjacentEmptyParagraphs(paragraphElement);
+            atListContentStart(liElement, range)) {
+            recordHistoryPosition(vditor);
+            vditor[vditor.currentMode].element.querySelectorAll("wbr").forEach((node) => node.remove());
+            range.insertNode(document.createElement("wbr"));
+            unwrapListItem(liElement);
             setRangeByWbr(vditor[vditor.currentMode].element, range);
             recordHistoryChange(vditor);
             event.preventDefault();

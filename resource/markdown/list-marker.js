@@ -61,6 +61,9 @@
  *     to `span && liSpan` (defensive; behaviorally equivalent).
  *   - task-list items (li.vditor-task) never activate (fork's task li
  *     carries data-marker and couples with the checkbox layout).
+ *   - insertion at the trailing separator folds the marker before native
+ *     input; body-start Backspace removes the whole marker via the editor's
+ *     list-item removal path, preserving nested paragraphs and item order.
  *
  * Known limitations shared with the source (documented, not fixed):
  *   - text pasted into the marker span that fails parseMarker is silently
@@ -384,6 +387,31 @@
     return null;
   }
 
+  // Chromium can place the caret on either side of the marker's trailing NBSP.
+  // That separator belongs to the content boundary, not the marker editor:
+  // text inserted there would otherwise disappear when Lute strips the span.
+  function moveMarkerBoundaryToContent(event) {
+    if (!inEditorMode()) return;
+    if (event.type === 'keydown' && ((event.key.length !== 1 && event.key !== 'Backspace') || event.key === ' '
+      || event.ctrlKey || event.metaKey || event.altKey)) return;
+    if (event.type === 'beforeinput' && !/^insert/.test(event.inputType || '')) return;
+    var sel = document.getSelection();
+    if (!sel || !sel.isCollapsed || !sel.rangeCount) return;
+    var span = caretSpan();
+    var li = span && closestLi(span);
+    if (!li) return;
+    var prefix = sel.getRangeAt(0).cloneRange();
+    prefix.selectNodeContents(span);
+    prefix.setEnd(sel.anchorNode, sel.anchorOffset);
+    var text = span.textContent || '';
+    var markerEnd = text.replace(/\s+$/, '').length;
+    if (markerEnd < text.length && prefix.toString().length >= markerEnd && parseMarker(text, li)) {
+      // Moving the range alone is insufficient: Chromium normalizes it back
+      // into the adjacent span when inserting. Fold it before native input.
+      foldLive(li);
+    }
+  }
+
   // CSS markers are list structure, not document text. Track whole-item
   // selections without injecting marker strings into the selected content.
   function hasSelectedContent(fragment) {
@@ -474,6 +502,7 @@
   }
 
   function onBeforeInputCapture(event) {
+    moveMarkerBoundaryToContent(event);
     if (event.isComposing) return;
     if (/^(delete|insert)/.test(event.inputType || '') && prepareSelectionReplacement(event)
       && event.inputType.indexOf('delete') === 0) {
@@ -486,6 +515,7 @@
   function onPasteCapture(event) {
     var data = event.clipboardData;
     if (event.defaultPrevented || !data || (!data.getData('text/plain') && !data.getData('text/html'))) return;
+    moveMarkerBoundaryToContent(event);
     prepareSelectionReplacement(event);
   }
 
@@ -564,37 +594,19 @@
     if (!editor) return;
     var span = liveSpanOf(li);
     if (span) span.remove();
-
-    var p = document.createElement('p');
-    p.setAttribute('data-block', '0');
-    while (li.firstChild) p.appendChild(li.firstChild);
-    var wbr = document.createElement('wbr');
-    p.insertBefore(wbr, p.firstChild);
-    // p 必须落在列表外：ul/ol 的直接 p 子元素是无效结构，ir 的 Lute 会
-    // 把它解析成上一项的懒续行（"- alpha\n  beta"）。唯一项时整个列表
-    // 换成段落；多项时 p 放列表尾之后（中间项升格后位置后移——已知
-    // 限制，与 wysiwyg 共享此行为）
-    var list = li.parentElement;
-    if (list && (list.tagName === 'UL' || list.tagName === 'OL')) {
-      if (list.children.length === 1) {
-        list.replaceWith(p);
-      } else {
-        list.insertAdjacentElement('afterend', p);
-        li.remove();
-      }
-    } else {
-      li.replaceWith(p);
-    }
-
+    li.classList.remove(LI_LIVE_CLASS);
+    var pos = contentStart(li);
     var sel = document.getSelection();
     var range = document.createRange();
-    range.setStartBefore(wbr);
+    range.setStart(pos.node, pos.offset);
     range.collapse(true);
     sel.removeAllRanges();
     sel.addRange(range);
 
-    editor.dispatchEvent(new InputEvent('input', {
-      bubbles: true, inputType: 'insertText', data: ' ',
+    // Reuse the editor's item-removal path, including sibling splitting,
+    // nested paragraph normalization, history and save notification.
+    editor.dispatchEvent(new KeyboardEvent('keydown', {
+      bubbles: true, cancelable: true, key: 'Backspace',
     }));
   }
 
@@ -632,6 +644,7 @@
     // processKeydown 的 isComposing 防护同级
     if (event.isComposing) return;
     if (!inEditorMode()) return;
+    moveMarkerBoundaryToContent(event);
     var sel = document.getSelection();
     if (!sel || sel.rangeCount === 0) return;
 
@@ -794,6 +807,7 @@
       document.addEventListener('keydown', onKeydownCapture, true);
       document.addEventListener('mousedown', onMouseDownCapture, true);
       document.addEventListener('beforeinput', onBeforeInputCapture, true);
+      document.addEventListener('compositionstart', moveMarkerBoundaryToContent, true);
       document.addEventListener('paste', onPasteCapture, true);
     }
     wrapLute();

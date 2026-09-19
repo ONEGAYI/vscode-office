@@ -44,7 +44,7 @@ const DIST_READY = fs.existsSync(path.join(DIST, 'index.min.js'))
 const fileUrl = (p) => 'file://' + p.replace(/\\/g, '/');
 
 /** 以真实构建产物启动编辑器（照 list-marker.test.js 的 boot 模式） */
-async function boot(content, { mode = 'wysiwyg' } = {}) {
+async function boot(content, { mode = 'wysiwyg', liveMarkers = false } = {}) {
   const virtualConsole = new VirtualConsole();
   const pageErrors = [];
   virtualConsole.on('jsdomError', (err) => pageErrors.push(String(err)));
@@ -124,6 +124,10 @@ async function boot(content, { mode = 'wysiwyg' } = {}) {
     if (booted
       && window.vditor.getCurrentMode && window.vditor.getCurrentMode() === mode
       && document.querySelector(`.vditor-${mode} .vditor-reset`)) {
+      if (liveMarkers) {
+        window.eval(fs.readFileSync(path.join(ROOT, 'resource/markdown/list-marker.js'), 'utf8'));
+        window.ListMarkerLive.install(window.vditor);
+      }
       return { window, document, mode };
     }
   }
@@ -795,6 +799,65 @@ describe('list-ops: idempotent cancel & boundary endpoints (G, #10)', { skip: DI
 // ── N/H/Q/R：审查补强（嵌套子列表 / heading / 单列表回退 / 引用隔断） ────
 
 describe('list-ops: review hardening (N/H/Q/R)', { skip: DIST_READY ? false : 'vditor/dist 未构建：先在 vditor/ 目录执行构建' }, () => {
+  for (const mode of ['ir', 'wysiwyg']) {
+    for (const [label, source, expected] of [
+      ['顶层首项', '123. 三 agent\n124. next\n', '三 agent\n\n124. next\n'],
+      ['唯一子项', '1. parent\n   - 三 agent\n', '1. parent\n\n   三 agent\n'],
+      ['中间子项', '1. parent\n   - before\n   - 三 agent\n   - after\n2. sibling\n',
+        '1. parent\n\n   - before\n\n   三 agent\n\n   - after\n2. sibling\n'],
+    ]) {
+      for (const entry of ['content', 'marker-cleared']) {
+        it(`N4: ${mode} ${label}退格取消标记且保留顺序，${entry}`, async () => {
+          const t = await boot(source, { mode, liveMarkers: true });
+          try {
+            const reset = resetEl(t);
+            const item = Array.from(reset.querySelectorAll('li')).find(el => el.textContent === '三 agent');
+            selectFromTo(t, item, item);
+            t.window.getSelection().collapseToStart();
+            t.document.dispatchEvent(new t.window.Event('selectionchange'));
+            if (entry === 'marker-cleared') {
+              const marker = item.querySelector('.vmd-li-marker');
+              marker.textContent = '';
+              const range = t.document.createRange();
+              range.setStart(marker, 0); range.collapse(true);
+              t.window.getSelection().removeAllRanges();
+              t.window.getSelection().addRange(range);
+            }
+            fireKey(t, 'Backspace');
+            await settle();
+            assert.equal(t.window.vditor.getValue(), expected);
+            t.window.vditor.setValue(t.window.vditor.getValue());
+            assert.equal(t.window.vditor.getValue(), expected, '重开后层级和顺序保持');
+          } finally { t.window.close(); }
+        });
+      }
+    }
+    for (const liveMarkers of [false, true]) {
+      it(`N3: ${mode} 取消二级列表保留独立段落，liveMarkers=${liveMarkers}`, async () => {
+        const t = await boot('1. parent\n   - 三 agent\n', { mode, liveMarkers });
+        try {
+          const reset = resetEl(t);
+          const child = reset.querySelector('li li');
+          selectFromTo(t, child, child);
+          t.window.getSelection().collapseToEnd();
+          t.document.dispatchEvent(new t.window.Event('selectionchange'));
+          if (liveMarkers) assert.ok(child.querySelector('.vmd-li-marker'));
+          child.dispatchEvent(new t.window.MouseEvent('click', { bubbles: true }));
+          assert.ok(t.window.vditor.vditor.toolbar.elements.list.children[0].classList.contains('vditor-menu--current'));
+          clickToolbar(t, 'list');
+          await settle();
+          assert.equal(t.window.vditor.getValue(), '1. parent\n\n   三 agent\n',
+            '取消子列表后正文须为父项中的独立段落，不能吸入父项首段');
+          assert.equal(reset.querySelectorAll('li li, p .vmd-li-marker').length, 0,
+            '已取消的子项不能残留列表或临时标记');
+          t.window.vditor.setValue(t.window.vditor.getValue());
+          assert.equal(reset.querySelectorAll('ol > li > p').length, 2,
+            '重新打开仍为父项中的两个段落');
+        } finally { t.window.close(); }
+      });
+    }
+  }
+
   it('N1: 转换为普通列表时嵌套子列表的 checkbox 保留', async () => {
     const t = await boot('- a\n  - [ ] b\n\npara\n');
     try {

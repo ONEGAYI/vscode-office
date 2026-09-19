@@ -303,6 +303,17 @@ body.is-web .vditor-context-menu__item--desktop-only:focus-visible {
     color: var(--list-marker-color, var(--vscode-descriptionForeground, rgba(127, 127, 127, 0.6)));
 }
 
+/* Loose lists contain block paragraphs. An inline marker before the first p
+   creates an extra line; float it into the gutter so that both the reading
+   marker and its editable replacement stay alongside the first paragraph.
+   Lute may omit data-tight for loose lists after reparsing typed Markdown. */
+.vditor-wysiwyg [data-block]:not([data-tight="true"]) > li[data-marker]:not(.vditor-task)::before,
+.vditor-ir [data-block]:not([data-tight="true"]) > li[data-marker]:not(.vditor-task)::before,
+.vditor-wysiwyg [data-block]:not([data-tight="true"]) > li > .vmd-li-marker,
+.vditor-ir [data-block]:not([data-tight="true"]) > li > .vmd-li-marker {
+    float: left;
+}
+
 /* Marker color follows the fork's --list-marker-color (same variable the
    native ::marker rendering used, defined on .vditor-reset), with a VS Code
    theme fallback for contexts where the variable is not in scope. */
