@@ -248,7 +248,13 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             // 变更 echo 检查依赖）
             const preserved = preserveTableFormat(oldText, nextContent);
             content = preserved;
-            await this.updateTextDocument(document, preserved);
+            const applied = await this.updateTextDocument(document, preserved);
+            // 只刷新行号，不 setValue：表格保鲜后的宿主文本与 Lute 导出文本可能
+            // 空行不同。带回本次输入供 webview 丢弃过期回执；无改动也须回执。
+            handler.emit('lineNumberSource', {
+                input: nextContent,
+                content: applied ? document.getText() : null,
+            });
         };
         const scheduleDocumentSync = (newContent: string) => {
             pendingDocumentSync = newContent;
@@ -587,7 +593,15 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 vscode.commands.executeCommand('revealFileInOS', uri);
             }
         }).on("save", (newContent) => {
-            if (lastManualSaveTime && Date.now() - lastManualSaveTime < 800) return;
+            if (lastManualSaveTime && Date.now() - lastManualSaveTime < 800) {
+                // 重复 input 也需要回执行号；冷却期内真正的新输入继续排队，
+                // 否则其源文本永远不同步，行号会一直等待。
+                const source = document.getText().replace(/\r/g, '');
+                if (preserveTableFormat(source, newContent) === source) {
+                    handler.emit('lineNumberSource', { input: newContent, content: source });
+                    return;
+                }
+            }
             scheduleDocumentSync(newContent);
         }).on("doSave", async (saveContent) => {
             lastManualSaveTime = Date.now();

@@ -24,6 +24,13 @@ handler.on("open", async (md) => {
   }
   let editor;
   const getMarkdownValue = createMarkdownValueReader(() => editor, workspaceBaseUrl);
+  let pendingLineNumberInput = null;
+  const submitMarkdown = (event, value) => {
+    pendingLineNumberInput = restoreWorkspaceBaseUrls(value, workspaceBaseUrl);
+    BlockLineNumbers.setSource(null);
+    handler.emit(event, pendingLineNumberInput);
+  };
+  const saveMarkdown = () => submitMarkdown('doSave', getMarkdownValue());
   editor = new Vditor('vditor', {
     value: content,
     cdn: rootPath,
@@ -44,7 +51,7 @@ handler.on("open", async (md) => {
     lang: mapVscodeLanguageToVditorLang(language),
     tab: '\t',
     toolbar: await getToolbar(rootPath, () => {
-      handler.emit('doSave', getMarkdownValue());
+      saveMarkdown();
       editor?.markSaved();
     }),
     onAboutOpen: () => handler.emit('openAbout'),
@@ -107,7 +114,7 @@ handler.on("open", async (md) => {
       handler.emit('saveDiagram', payload)
     },
     input(content) {
-      handler.emit("save", restoreWorkspaceBaseUrls(content, workspaceBaseUrl))
+      submitMarkdown('save', content);
     },
     upload: {
       url: '/image',
@@ -142,7 +149,16 @@ handler.on("open", async (md) => {
       const { viewerSettings } = md;
       ListMarkerLive.install(editor);
       document.body.classList.toggle('vmd-heading-badges-off', markdownHeadingBadges === false);
-      BlockLineNumbers.install(editor, { enabled: markdownBlockLineNumbers !== false });
+      BlockLineNumbers.install(editor, {
+        enabled: markdownBlockLineNumbers !== false,
+        sourceText: pendingLineNumberInput === null ? content : null,
+      });
+      handler.on('lineNumberSource', (reply) => {
+        // 自动同步有去抖且 applyEdit 异步完成；旧回执不得覆盖新输入的映射。
+        if (pendingLineNumberInput === null || reply.input !== pendingLineNumberInput) return;
+        if (typeof reply.content === 'string') pendingLineNumberInput = null;
+        BlockLineNumbers.setSource(reply.content);
+      });
       observeWorkspaceAbsoluteImages(document.getElementById('vditor'), workspaceBaseUrl);
       if (viewerSettings?.enabled) {
         editor.setViewerSettingsSyncEnabled(true);
@@ -185,10 +201,13 @@ handler.on("open", async (md) => {
         if (document.querySelector("[data-type='yaml-front-matter'].vditor-code-block--cm .cm-editor.cm-focused")) {
           return;
         }
+        pendingLineNumberInput = null;
         if (getMarkdownValue() === content) {
+          BlockLineNumbers.setSource(content);
           return;
         }
         editor.setValue(content);
+        BlockLineNumbers.setSource(content);
         editor.markSaved();
       })
       handler.on("insertImageMarkdown", (markdown) => {
@@ -221,6 +240,6 @@ handler.on("open", async (md) => {
       }
     }
   })
-  bindShortcut(handler, editor, workspaceBaseUrl);
+  bindShortcut(handler, editor, workspaceBaseUrl, saveMarkdown);
   createContextMenu(editor)
 }).emit("init")

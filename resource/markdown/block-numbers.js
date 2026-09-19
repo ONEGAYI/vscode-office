@@ -3,16 +3,15 @@
  *
  * Ported from vscode-markdown-editor-hardened `src/extension.ts`
  * lineNumberScript (d64e408; upstream PR #157 by asalcedo29). The scanner
- * semantics are kept verbatim where marked; the display and DOM-binding
- * layers are this fork's own (see "Intentional divergences" below).
+ * is adapted for host source text; display and DOM binding are this fork's
+ * own (see "Intentional divergences" below).
  *
  * What the user sees: every independent paragraph/block (h1-h6, p, ul/ol,
  * blockquote, table, code block, frontmatter …) carries the 1-based line
- * its first source line occupies in the editor's CURRENT text (live
- * getValue(), not the startup snapshot — the snapshot drifts as soon as
- * the document is edited). vditor re-serializes blank lines, so numbers
- * may differ from the file on disk by a few lines (upstream-documented
- * behavior, mirrored in the setting description).
+ * its first source line occupies in the host TextDocument, including
+ * unsaved changes. The host refreshes sourceText after applying edits;
+ * getValue() is only a fallback for standalone consumers without a host.
+ * Lute's serialized blank lines must not replace host source positions.
  *
  * Display: a data-lineno attribute + CSS ::before/attr() (index.css).
  * The number rides on the block itself, so it scrolls/animates with the
@@ -25,6 +24,10 @@
  * fence test still asserts getValue() stays clean.
  *
  * Intentional divergences from the hardened source:
+ *   - sourceText from the host is authoritative; setSource(null) pauses
+ *     numbering until an edit is acknowledged, without reloading the DOM
+ *   - raw syntax variants (setext, tabs, spaced rules, tilde/long fences)
+ *     are recognized without relying on Lute to normalize the source
  *   - visibility: block-level tag whitelist instead of offsetHeight>0
  *     (offsetHeight is 0 in layout-less environments and only a proxy in
  *     browsers); the whitelist also naturally skips the fork's boundary
@@ -43,8 +46,7 @@
  *   - a table line right after a quote (no blank line) joins the quote
  *     in Lute but breaks it here
  *   - an ordered list not starting at 1 does not interrupt a paragraph
- *   - setext headings ("para" + "---"), html comments, 4+ backtick
- *     fences are not recognized
+ *   - html comments are not recognized
  *   - footnote definitions are aggregated by Lute into a trailing
  *     block, so both count and order can diverge
  *
@@ -60,23 +62,26 @@
   var ATTR = 'data-lineno';
 
   var currentEditor = null;
+  // undefined: standalone/live getValue(); null: host edit awaiting acknowledgement.
+  var sourceText;
   var enabled = true;
   var observer = null;
   var scheduled = false;
 
   // ── block scanner ────────────────────────────────────────────────────────
 
-  var R_HEADING = /^#{1,6} /;
-  var R_HR = /^(---|[*]{3}|___)$/;
-  var R_LI = /^[-*+] /;
-  var R_OL = /^[0-9]+[.)] /;
+  var R_HEADING = /^#{1,6}(?:[\t ]|$)/;
+  var R_SETEXT = /^(?:=+|-+)$/;
+  var R_HR = /^(?:(?:\*[\t ]*){3,}|(?:-[\t ]*){3,}|(?:_[\t ]*){3,})$/;
+  var R_LI = /^[-*+][\t ]/;
+  var R_OL = /^[0-9]+[.)][\t ]/;
   // 懒延续缩进行：空格或 Tab（编辑器 Tab 键即插入 \t，见 index.js tab:'\t'）
   var R_INDENT = /^[\t ]+\S/;
-  var FENCE = '```';
+  var R_FENCE = /^(`{3,}|~{3,})/;
 
   function isBlockStart(s) {
     return R_HEADING.test(s) || R_LI.test(s) || R_OL.test(s)
-      || s.indexOf(FENCE) === 0 || s.indexOf('$$') === 0
+      || R_FENCE.test(s) || s.indexOf('$$') === 0
       || s.charAt(0) === '|' || s.charAt(0) === '>'
       || R_HR.test(s);
   }
@@ -92,7 +97,7 @@
     }
     var s = rawLine.trim();
     return R_HEADING.test(s) || s.charAt(0) === '>'
-      || s.indexOf(FENCE) === 0 || s.indexOf('$$') === 0 || R_HR.test(s);
+      || R_FENCE.test(s) || s.indexOf('$$') === 0 || R_HR.test(s);
   }
 
   /**
@@ -119,15 +124,17 @@
       starts.push(i + 1);
       if (R_HEADING.test(tr) || R_HR.test(tr)) {
         i++;
-      } else if (tr.indexOf(FENCE) === 0 || tr.indexOf('$$') === 0) {
+      } else if (R_FENCE.test(tr) || tr.indexOf('$$') === 0) {
         // fence / 数学块：单行自闭合（$$..$$ 同行闭合）只占一行，
-        // 否则吞到闭合行（$$ 或 ```）或 EOF
+        // 否则吞到闭合行或 EOF
         if (tr.indexOf('$$') === 0 && tr.length > 4 && tr.lastIndexOf('$$') > 0) {
           i++;
         } else {
-          var closer = tr.indexOf(FENCE) === 0 ? FENCE : '$$';
+          var fence = tr.match(R_FENCE);
+          // 围栏必须同字符且闭合长度不小于开启长度；代码里的短围栏不是结尾。
+          var closer = fence ? new RegExp('^' + fence[1].charAt(0) + '{' + fence[1].length + ',}$') : /^\$\$/;
           i++;
-          while (i < L.length && L[i].trim().indexOf(closer) !== 0) i++;
+          while (i < L.length && !closer.test(L[i].trim())) i++;
           if (i < L.length) i++;
         }
       } else if (tr.charAt(0) === '|') {
@@ -172,6 +179,8 @@
       } else {
         i++;
         while (i < L.length && L[i].trim() !== '') {
+          // 原文可用 --- 下划线标题；不能将下划线误当独立分隔线。
+          if (R_SETEXT.test(L[i].trim())) { i++; break; }
           if (isBlockStart(L[i].trim())) break;
           i++;
         }
@@ -243,7 +252,9 @@
 
     var starts = null;
     try {
-      starts = computeBlockStarts(currentEditor.getValue() || '');
+      if (sourceText !== null) {
+        starts = computeBlockStarts(sourceText === undefined ? currentEditor.getValue() || '' : sourceText);
+      }
     } catch (e) {
       starts = null;
     }
@@ -305,6 +316,11 @@
 
   // ── public API ───────────────────────────────────────────────────────────
 
+  function setSource(text) {
+    sourceText = typeof text === 'string' ? text : null;
+    sync();
+  }
+
   function setEnabled(on) {
     enabled = !!on;
     applyBodyClasses();
@@ -327,6 +343,7 @@
       observer = null;
     }
     currentEditor = editor;
+    sourceText = options && options.sourceText;
     enabled = options && options.enabled !== undefined ? !!options.enabled : true;
     setEnabled(enabled);
   }
@@ -334,6 +351,7 @@
   window.BlockLineNumbers = {
     install: install,
     setEnabled: setEnabled,
+    setSource: setSource,
     sync: sync,
     computeBlockStarts: computeBlockStarts,
   };

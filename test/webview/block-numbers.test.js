@@ -32,6 +32,7 @@ const path = require('node:path');
 const { JSDOM, VirtualConsole } = require('jsdom');
 const { TextDecoder, TextEncoder } = require('node:util');
 const { webcrypto } = require('node:crypto');
+const { transformSync } = require('esbuild');
 
 const ROOT = path.join(__dirname, '..', '..');
 const DIST = path.join(ROOT, 'vditor', 'dist');
@@ -68,7 +69,7 @@ function loadModuleApi() {
  * 测试文档避开 fence/frontmatter（jsdom 无布局，CM 懒挂载不可控），
  * 这两类形态由 S 组纯函数覆盖。
  */
-async function boot(content) {
+async function boot(content, mode = 'ir') {
   const virtualConsole = new VirtualConsole();
   const pageErrors = [];
   virtualConsole.on('jsdomError', (err) => pageErrors.push(String(err)));
@@ -133,7 +134,7 @@ async function boot(content) {
   let booted = false;
   window.vditor = new window.Vditor('app', {
     value: content,
-    mode: 'ir',
+    mode,
     lang: 'en_US',
     i18n,
     cdn: fileUrl(path.join(ROOT, 'vditor')),
@@ -146,8 +147,8 @@ async function boot(content) {
   for (let i = 0; i < 60; i++) {
     await sleep(250);
     if (booted
-      && window.vditor.getCurrentMode && window.vditor.getCurrentMode() === 'ir'
-      && document.querySelector('.vditor-ir .vditor-reset')) {
+      && window.vditor.getCurrentMode && window.vditor.getCurrentMode() === mode
+      && document.querySelector('.vditor-' + mode + ' .vditor-reset')) {
       return { window, document };
     }
   }
@@ -220,10 +221,10 @@ const MD_N = [
 ].join('\n');
 
 /**
- * 期望行号锚点法：块首行文本在 getValue() 中的实际行号（独立于扫描器实现，
+ * 无宿主的 standalone 回退契约：块首行文本在 getValue() 中的实际行号（独立于扫描器实现，
  * 按 includes 逐行查找）。契约 = data-lineno 与锚点行吻合，而非硬编码原文
  * 行号——vditor re-serialize 会规范化块间空行（本例：tight list 后空行 +1），
- * 行号语义自洽于"当前编辑文本"，硬编码原文行号是错误断言。
+ * 此组验证未传 sourceText 的回退行为；宿主原文行号另有 source 组覆盖。
  */
 const MD_N_ANCHORS = [
   '# H1 title',
@@ -348,6 +349,170 @@ describe('block-numbers: block scanner contract (S)', { skip: MODULE_READY ? fal
   it('S14: CRLF input scans like LF', () => {
     assert.deepEqual(api.computeBlockStarts('# H\r\n\r\npara1\r\n\r\npara2\r\n'), [1, 3, 5]);
   });
+
+  it('S15: fenced blocks require the same marker and a sufficiently long closing fence', () => {
+    assert.deepEqual(api.computeBlockStarts('~~~~js\na\n\n```\n~~~\nb\n~~~~\n\nafter\n'), [1, 9]);
+    assert.deepEqual(api.computeBlockStarts('````\na\n\n```\nb\n````\n\nafter\n'), [1, 8]);
+  });
+
+  it('S16: empty list markers do not interrupt a paragraph', () => {
+    assert.deepEqual(api.computeBlockStarts('before\n+\nafter\n'), [1]);
+    assert.deepEqual(api.computeBlockStarts('before\n1.\nafter\n'), [1]);
+  });
+});
+
+// 宿主原文与 Lute 导出文本的空行不同：第一张表前一行空行，第二张表前两行。
+const MD_SOURCE = [
+  '本阶段提供三个检查分支：', '',
+  '| 检查分支 | 现象 | 判定要点 |', '| --- | --- | --- |',
+  '| `delta_glitch` | 多次变化 | 至少两次 |',
+  '| `high_too_short` | 高电平 | 宽度不足 |',
+  '| `low_too_short` | 低电平 | 宽度不足 |', '',
+  '#### 缺陷判定依据', '', '',
+  '| A | B |', '| --- | --- |', '| x | y |', '', '后续段落',
+].join('\n');
+
+// 执行实际 index.js，替换工具栏等外围依赖；行号模块与编辑器使用真实实现。
+async function bootWired(content, mode = 'ir') {
+  const ctx = await boot(content, mode);
+  const { window, document } = ctx;
+  document.getElementById('app').id = 'vditor';
+  window.eval(fs.readFileSync(MODULE_PATH, 'utf8'));
+  const listeners = {};
+  const sent = [];
+  const handler = {
+    on(name, callback) { listeners[name] = callback; return handler; },
+    emit(name, payload) { sent.push({ name, payload }); return handler; },
+  };
+  let options;
+  let toolbarSave;
+  let shortcutSave;
+  window.handler = handler;
+  window.ListMarkerLive = { install() {} };
+  window.Vditor = function (_id, config) { options = config; return window.vditor; };
+  const imageModule = { exports: {} };
+  new window.Function('module', 'exports', transformSync(fs.readFileSync(path.join(ROOT, 'resource/markdown/imagePath.js'), 'utf8'), { format: 'cjs' }).code)(imageModule, imageModule.exports);
+  window.require = name => {
+    if (name === './imagePath.js') return imageModule.exports;
+    if (name === './lang.js') return { mapVscodeLanguageToVditorLang: () => 'en_US' };
+    if (name === './util.js') return {
+      getToolbar: async (_root, save) => { toolbarSave = save; return []; },
+      bindShortcut: (_handler, _editor, _base, save) => { shortcutSave = save; },
+      createContextMenu() {}, setAIAvailable() {},
+    };
+    throw new Error('Unexpected import ' + name);
+  };
+  window.eval(transformSync(fs.readFileSync(INDEXJS_PATH, 'utf8'), { format: 'cjs' }).code);
+  await listeners.open({ content, rootPath: '', workspaceBaseUrl: '', config: { editMode: mode } });
+  options.after();
+  return { ...ctx, listeners, sent, options, toolbarSave, shortcutSave,
+    numbers: () => Array.from(document.querySelectorAll('.vditor-' + window.vditor.getCurrentMode() + ' .vditor-reset > [data-lineno]'))
+      .map(el => Number(el.getAttribute('data-lineno'))),
+  };
+}
+
+describe('block-numbers: host source wiring', { skip: !DIST_READY }, () => {
+  it('open and external updates use host text, including a serialization-equal update', async () => {
+    const ctx = await bootWired(MD_SOURCE);
+    try {
+      assert.deepEqual(ctx.numbers(), [1, 3, 9, 12, 16]);
+      const external = '\n\n' + MD_SOURCE;
+      ctx.listeners.update(external);
+      ctx.window.BlockLineNumbers.sync();
+      assert.deepEqual(ctx.numbers(), [3, 5, 11, 14, 18]);
+      const serialized = ctx.window.vditor.getValue();
+      ctx.listeners.update(serialized);
+      assert.deepEqual(ctx.numbers(), [1, 4, 10, 13, 17]);
+    } finally { ctx.window.close(); }
+  });
+
+  it('latest save acknowledgement supplies preserved text; older replies do not overwrite it', async () => {
+    const ctx = await bootWired(MD_SOURCE);
+    try {
+      const first = MD_SOURCE.replace('本阶段', '第一阶段');
+      ctx.window.vditor.setValue(first);
+      const firstInput = ctx.window.vditor.getValue();
+      ctx.options.input(firstInput);
+      const second = MD_SOURCE.replace('本阶段', '第二阶段');
+      ctx.window.vditor.setValue(second);
+      const secondInput = ctx.window.vditor.getValue();
+      ctx.options.input(secondInput);
+      assert.deepEqual(ctx.numbers(), [], '待宿主同步时不显示旧文档行号');
+      ctx.listeners.lineNumberSource({ input: firstInput, content: '\n' + first });
+      assert.deepEqual(ctx.numbers(), []);
+      ctx.listeners.lineNumberSource({ input: secondInput, content: second });
+      assert.deepEqual(ctx.numbers(), [1, 3, 9, 12, 16]);
+      ctx.listeners.lineNumberSource({ input: firstInput, content: '\n' + first });
+      assert.deepEqual(ctx.numbers(), [1, 3, 9, 12, 16]);
+      // 模式切换仅影响导出格式，不改变宿主原文行号。
+      ctx.window.vditor.switchEditMode('wysiwyg');
+      ctx.window.BlockLineNumbers.sync();
+      assert.deepEqual(ctx.numbers(), [1, 3, 9, 12, 16]);
+    } finally { ctx.window.close(); }
+  });
+
+  for (const method of ['toolbarSave', 'shortcutSave']) {
+    it(method + ' tracks manual-save replies without reloading the editor', async () => {
+      const ctx = await bootWired(MD_SOURCE);
+      try {
+        ctx[method]();
+        const input = ctx.sent.findLast(item => item.name === 'doSave').payload;
+        ctx.listeners.lineNumberSource({ input, content: MD_SOURCE });
+        assert.deepEqual(ctx.numbers(), [1, 3, 9, 12, 16]);
+      } finally { ctx.window.close(); }
+    });
+  }
+});
+
+describe('block-numbers: host source lines', { skip: !DIST_READY }, () => {
+  for (const mode of ['ir', 'wysiwyg']) {
+    for (const fixture of [
+      { name: 'tilde fences', source: '~~~js\na\n\nb\n~~~\n\nafter\n', lines: [1, 7] },
+      { name: 'tab-separated headings', source: 'before\n#\tTitle\n\nafter\n', lines: [1, 2, 4] },
+      { name: 'tab-separated lists', source: 'before\n-\titem\n\nafter\n', lines: [1, 2, 4] },
+      { name: 'spaced thematic breaks', source: 'before\n* * *\nafter\n', lines: [1, 2, 3] },
+    ]) {
+      it(mode + ': raw ' + fixture.name + ' retain source mapping', async () => {
+        const { window, document } = await boot(fixture.source, mode);
+        try {
+          window.eval(fs.readFileSync(MODULE_PATH, 'utf8'));
+          window.BlockLineNumbers.install(window.vditor, { sourceText: fixture.source });
+          assert.deepEqual(Array.from(document.querySelectorAll('[data-lineno]'))
+            .map(el => Number(el.getAttribute('data-lineno'))), fixture.lines);
+        } finally { window.close(); }
+      });
+    }
+    it(mode + ': setext headings retain source lines without normalization', async () => {
+      const source = 'Title\n---\n\nparagraph\n';
+      const { window, document } = await boot(source, mode);
+      try {
+        window.eval(fs.readFileSync(MODULE_PATH, 'utf8'));
+        window.BlockLineNumbers.install(window.vditor, { sourceText: source });
+        const numbers = Array.from(document.querySelectorAll('[data-lineno]'))
+          .map(el => Number(el.getAttribute('data-lineno')));
+        assert.deepEqual(numbers, [1, 4]);
+      } finally { window.close(); }
+    });
+    it(mode + ': table serialization does not shift source line numbers', async () => {
+      const { window, document } = await boot(MD_SOURCE, mode);
+      try {
+        window.eval(fs.readFileSync(MODULE_PATH, 'utf8'));
+        window.BlockLineNumbers.install(window.vditor, { sourceText: MD_SOURCE });
+        const root = document.querySelector('.vditor-' + mode + ' .vditor-reset');
+        const numbers = () => Array.from(root.querySelectorAll(':scope > [data-lineno]'))
+          .map(el => Number(el.getAttribute('data-lineno')));
+        assert.deepEqual(numbers(), [1, 3, 9, 12, 16]);
+        // 重渲染与开关不应退回 Lute 规范化后的行号。
+        window.BlockLineNumbers.sync();
+        window.BlockLineNumbers.setEnabled(false);
+        window.BlockLineNumbers.setEnabled(true);
+        assert.deepEqual(numbers(), [1, 3, 9, 12, 16]);
+        assert.ok(!window.vditor.getValue().includes('data-lineno'));
+      } finally {
+        window.close();
+      }
+    });
+  }
 });
 
 // ── N：模块行为契约（IR 模式，真实构建产物） ────────────────────────────
