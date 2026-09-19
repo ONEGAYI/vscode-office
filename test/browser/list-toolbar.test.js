@@ -49,6 +49,7 @@ test('toolbar-created lists display markers and retain multi-paragraph selection
                 value: 'before\n\n送上\n\n的是\n\n分从\n\nafter\n', mode,
                 i18n: VditorI18n, cdn: base + '/resource/markdown', height: 600,
                 cache: { enable: false }, toolbar: ['list', 'ordered-list', 'check'],
+                input(value) { window.savedMarkdown = value; },
                 after() { ListMarkerLive.install(window.vditor); resolve(); },
               });
             }), { mode, base });
@@ -106,6 +107,24 @@ test('toolbar-created lists display markers and retain multi-paragraph selection
               await page.waitForFunction(s => !document.querySelector(s + ' .vmd-li-marker'), {}, selector);
               assert.equal(await page.$eval(selector + ' li', el => getComputedStyle(el, '::before').content), '"• "');
               assert.match(await page.evaluate(() => vditor.getValue()), /^- +送上$/m);
+            }
+            if (count === 1) {
+              const selector = `.vditor-${mode} .vditor-reset`;
+              const marker = type === 'list' ? '-' : type === 'ordered-list' ? '1.' : '- [ ]';
+              const source = `1. parent\n   ${marker} 三 agent\n`;
+              const expected = '1. parent\n\n   三 agent\n';
+              await page.evaluate(value => vditor.setValue(value), source);
+              await page.click(selector + ' li li');
+              await page.waitForSelector(`[data-type="${type}"].vditor-menu--current`);
+              await page.click(`[data-type="${type}"]`);
+              assert.equal(await page.evaluate(() => vditor.getValue()), expected,
+                'cancelling a nested list must preserve a separate paragraph in its parent');
+              await page.waitForFunction(value => window.savedMarkdown === value, { timeout: 3000 }, expected);
+              assert.equal(await page.$$eval(selector + ' li li, ' + selector + ' p .vmd-li-marker', els => els.length), 0,
+                'cancelled child list has no phantom marker');
+              await page.evaluate(() => vditor.setValue(vditor.getValue()));
+              assert.deepEqual(await page.$$eval(selector + ' ol > li > p', els => els.map(el => el.textContent)),
+                ['parent', '三 agent'], 'paragraph boundaries survive reopening');
             }
           } finally { await page.close(); }
         });

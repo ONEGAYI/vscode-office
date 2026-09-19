@@ -13,7 +13,7 @@ const browserPath = process.env.BROWSER_PATH || [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
 ].find(p => fs.existsSync(p));
 
-test('first marker click preserves character position in both editor modes',
+test('marker clicks preserve character position and boundary input reaches saved content',
   { skip: !browserPath && 'Set BROWSER_PATH to a Chromium executable' }, async t => {
     const { default: puppeteer } = await import('puppeteer-core');
     const server = http.createServer((req, res) => {
@@ -50,6 +50,7 @@ test('first marker click preserves character position in both editor modes',
               value: '123. first\n124. second\n125. third\n', mode,
               i18n: VditorI18n, cdn: base + '/vditor', height: 600,
               cache: { enable: false }, toolbar: [],
+              input(value) { window.savedMarkdown = value; },
               after() { ListMarkerLive.install(window.vditor); resolve(); },
             });
           }), { mode, base });
@@ -109,6 +110,60 @@ test('first marker click preserves character position in both editor modes',
             return { collapsed: s.isCollapsed, prefix: prefix.toString().replace(/\u200b/g, '') };
           }), { collapsed: true, prefix: '' }, 'Home reaches the beginning of the item');
           assert.equal(await page.evaluate(() => vditor.getValue()), '123. first\n124. second\n125. third\n');
+          // Both halves of the separator, including a first click from another
+          // item, must insert real content and reach the host's save callback.
+          const cdp = await page.createCDPSession();
+          for (const marker of ['-', '1.']) {
+            for (const fraction of [0.2, 0.8]) {
+              for (const input of ['keyboard', 'insertText', 'ime', 'backspace']) {
+                const source = `1. parent\n   ${marker} 三 agent\n`;
+                const text = input === 'keyboard' ? 'wrong' : '中文';
+                const expected = input === 'backspace' ? '1. parent\n\n   三 agent\n'
+                  : `1. parent\n   ${marker} ${text}三 agent\n`;
+                await page.evaluate(value => { vditor.setValue(value); window.savedMarkdown = null; }, source);
+                const item = selector + ' li li';
+                await page.click(item);
+                await page.waitForSelector(item + ' .vmd-li-marker');
+                const gap = await page.evaluate(({ item, fraction }) => {
+                  const span = document.querySelector(item + ' .vmd-li-marker');
+                  const range = document.createRange();
+                  range.setStart(span.firstChild, span.textContent.length - 1);
+                  range.setEnd(span.firstChild, span.textContent.length);
+                  const rect = range.getBoundingClientRect();
+                  return { x: rect.left + rect.width * fraction, y: rect.top + rect.height / 2 };
+                }, { item, fraction });
+                // Fold the calibrated marker so the tested click activates it.
+                const parentPoint = await page.$eval(selector + ' li', el => {
+                  const rect = el.getBoundingClientRect();
+                  return { x: rect.left + 20, y: rect.top + 5 };
+                });
+                await page.mouse.click(parentPoint.x, parentPoint.y);
+                await page.waitForFunction(s => !document.querySelector(s + ' .vmd-li-marker'), {}, item);
+                await page.mouse.click(gap.x, gap.y);
+                if (input === 'keyboard') await page.keyboard.type(text);
+                else if (input === 'backspace') await page.keyboard.press('Backspace');
+                else if (input === 'insertText') await cdp.send('Input.insertText', { text });
+                else {
+                  await cdp.send('Input.imeSetComposition', { text, selectionStart: text.length, selectionEnd: text.length });
+                  await cdp.send('Input.insertText', { text });
+                }
+                assert.equal(await page.evaluate(() => vditor.getValue()), expected,
+                  `${mode}/${marker}/${fraction}/${input}: boundary input must survive serialization`);
+                await page.waitForFunction(value => window.savedMarkdown === value, { timeout: 3000 }, expected);
+                if (input === 'backspace') {
+                  assert.equal(await page.$$eval(selector + ' li li, ' + selector + ' p .vmd-li-marker', els => els.length), 0);
+                  await page.keyboard.down('Control');
+                  await page.keyboard.press('z');
+                  await page.keyboard.up('Control');
+                  await page.waitForFunction(value => vditor.getValue() === value, { timeout: 3000 }, source);
+                  continue;
+                }
+                await page.evaluate(() => vditor.setValue(vditor.getValue()));
+                assert.equal(await page.$eval(item, el => el.textContent), `${text}三 agent`,
+                  'saved text remains visible after re-rendering');
+              }
+            }
+          }
         } finally { await page.close(); }
       });
     }
