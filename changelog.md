@@ -1,5 +1,14 @@
 # Change log
 
+# 4.4.1-suian 2026-9-19
+
+本版修复 Markdown 块行号与宿主文档的偏移，以及图表弹窗连线在浅色主题下对比度不足两项问题。
+
+Markdown 编辑器：
+
+- 修复：块行号与 VSCode 文档源码行对齐——行号改用文档原文而非编辑器导出文本，表格等重排不再引起后续编号错位；打开、外部更新与保存后同步原文行号，等待同步期间隐藏旧编号；未编辑表格保留原格式，兼容原文标题、Tab 分隔与代码围栏写法——fork PR #24
+- 修复：图表弹窗内 mermaid 连线在浅色编辑器主题下几乎不可读——半透明连线色实色化并保证与背景对比不低于 3:1，弹窗恢复与编辑器一致的实底卡片背景，深浅主题所见一致——fork PR #25
+
 # 4.4.0-suian 2026-9-18
 
 本版新增图表代码块弹窗预览，并落地列表标记、行内样式切换、行内标记拖放三批编辑器修复。版本线自本版起由 `fork.N` 计数切换为 `-suian` 后缀、按正常 semver 递进。
@@ -930,3 +939,4 @@ Other:
 [4.3.0-fork.1]: https://github.com/ONEGAYI/vscode-office/commits/v4.3.0-fork.1
 [4.3.0-fork.2]: https://github.com/ONEGAYI/vscode-office/compare/v4.3.0-fork.1...v4.3.0-fork.2
 [4.4.0-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.3.0-fork.2...v4.4.0-suian
+[4.4.1-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.4.0-suian...v4.4.1-suian
