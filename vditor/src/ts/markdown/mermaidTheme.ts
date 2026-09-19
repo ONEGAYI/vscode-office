@@ -137,6 +137,106 @@ export const isDarkBackground = (color: string): boolean => {
     return luminance < 0.5;
 };
 
+interface RgbaColor {
+    r: number;
+    g: number;
+    b: number;
+    a: number;
+}
+
+const parseRgba = (color: string): RgbaColor | null => {
+    const value = color.trim();
+    if (!value) {
+        return null;
+    }
+    if (value.startsWith("#")) {
+        const hex = value.slice(1);
+        if (hex.length === 3) {
+            return {
+                r: parseInt(hex[0] + hex[0], 16),
+                g: parseInt(hex[1] + hex[1], 16),
+                b: parseInt(hex[2] + hex[2], 16),
+                a: 1,
+            };
+        }
+        if (hex.length >= 6) {
+            const a = hex.length >= 8 ? parseInt(hex.slice(6, 8), 16) / 255 : 1;
+            return {
+                r: parseInt(hex.slice(0, 2), 16),
+                g: parseInt(hex.slice(2, 4), 16),
+                b: parseInt(hex.slice(4, 6), 16),
+                a,
+            };
+        }
+        return null;
+    }
+    const rgbMatch = value.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:[,/]\s*([\d.]+%?)\s*)?\)/i);
+    if (rgbMatch) {
+        let a = 1;
+        if (rgbMatch[4] !== undefined) {
+            a = rgbMatch[4].endsWith("%") ? Number(rgbMatch[4].slice(0, -1)) / 100 : Number(rgbMatch[4]);
+        }
+        return { r: Number(rgbMatch[1]), g: Number(rgbMatch[2]), b: Number(rgbMatch[3]), a };
+    }
+    return null;
+};
+
+const relativeLuminance = (r: number, g: number, b: number): number => {
+    const channel = (v: number) => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+};
+
+const contrastRatio = (a: RgbaColor, b: RgbaColor): number => {
+    const l1 = relativeLuminance(a.r, a.g, a.b);
+    const l2 = relativeLuminance(b.r, b.g, b.b);
+    return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+};
+
+const toRgbString = (c: RgbaColor): string =>
+    `rgb(${Math.round(c.r)}, ${Math.round(c.g)}, ${Math.round(c.b)})`;
+
+/**
+ * 半透明/低对比连线色的实色化：themeVariables 会把 lineColor 固化进 SVG 渲染结果，
+ * vditor 的 --second-color 等来源常带低 alpha，直接直通会在浅色底或弹窗毛玻璃背衬上
+ * 对比度不足。先把 alpha 合成到背景得到实色，再按需向前景色混合至 WCAG 对比度达标。
+ */
+export const ensureContrastColor = (color: string, bg: string, fg: string, minContrast = 3): string => {
+    const fgRgb = parseRgba(fg);
+    const bgRgb = parseRgba(bg);
+    if (!fgRgb || !bgRgb) {
+        return color;
+    }
+    const source = parseRgba(color);
+    if (!source) {
+        return color;
+    }
+    const composite: RgbaColor = {
+        r: source.r * source.a + bgRgb.r * (1 - source.a),
+        g: source.g * source.a + bgRgb.g * (1 - source.a),
+        b: source.b * source.a + bgRgb.b * (1 - source.a),
+        a: 1,
+    };
+    if (source.a >= 1 && contrastRatio(source, bgRgb) >= minContrast) {
+        // 已达标的不透明色原样保留，不重写调色板字面量
+        return color;
+    }
+    for (let t = 0.1; t < 1; t += 0.1) {
+        const mixed: RgbaColor = {
+            r: composite.r + (fgRgb.r - composite.r) * t,
+            g: composite.g + (fgRgb.g - composite.g) * t,
+            b: composite.b + (fgRgb.b - composite.b) * t,
+            a: 1,
+        };
+        if (contrastRatio(mixed, bgRgb) >= minContrast) {
+            return toRgbString(mixed);
+        }
+    }
+    return toRgbString(fgRgb);
+};
+
 export const findVditorRoot = (element: HTMLElement): HTMLElement => {
     const vditor = element.closest("#vditor") as HTMLElement | null;
     return vditor ?? element;
@@ -269,6 +369,9 @@ export const buildMermaidThemeConfig = (root: HTMLElement) => {
     const border = readCssVar(root, "--border-color", dark ? "#444444" : "#d0d0d0");
     const accent = readCssVar(root, "--list-hover-color") || readCssVar(root, "--link-color", readCssVar(root, "--chart-blue"));
     const muted = readCssVar(root, "--second-color", border);
+    // --second-color 常是半透明浅灰（如 rgba(88,96,105,.36)），会被固化进 SVG 笔画，
+    // 在浅底与弹窗毛玻璃背衬上低于图形 3:1 对比底线，连线/箭头必须实色化
+    const lineSolid = ensureContrastColor(muted, bg, fg);
     const error = readCssVar(root, "--error-color", readCssVar(root, "--chart-red", "#e51400"));
     const chart = readEditorAccentColors(root);
     const noteBg = chart.yellow;
@@ -288,7 +391,7 @@ export const buildMermaidThemeConfig = (root: HTMLElement) => {
             actorTextColor: fg,
             altBackground: codeBg,
             altSectionBkgColor: chart.orange,
-            arrowheadColor: muted,
+            arrowheadColor: lineSolid,
             background: bg,
             border1: accent,
             border2: border,
@@ -321,7 +424,7 @@ export const buildMermaidThemeConfig = (root: HTMLElement) => {
             labelBoxBorderColor: accent,
             labelColor: fg,
             labelTextColor: fg,
-            lineColor: muted,
+            lineColor: lineSolid,
             loopTextColor: chart.orange,
             mainBkg: panelBg,
             mainContrastColor: fg,
