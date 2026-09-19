@@ -2,7 +2,7 @@
 	"name": "vscode-office",
 	"displayName": "Office Viewer (Fork)",
 	"description": "View word, excel, powerpoint files and using WYSIWYG editor for markdown.",
-	"version": "4.4.1-suian",
+	"version": "4.4.2-suian",
 	"publisher": "ONEGAYI",
 	"icon": "image/logo.png",
 	"engines": {

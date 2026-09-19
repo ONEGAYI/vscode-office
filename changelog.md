@@ -1,5 +1,15 @@
 # Change log
 
+# 4.4.2-suian 2026-9-20
+
+本版修复列表标记聚焦编辑的三处边界问题：标记内尾部输入不生效、取消嵌套层级时段落结构错乱、松散列表标记与首段错行。
+
+Markdown 编辑器：
+
+- 修复：聚焦编辑列表标记时，标记尾部的空白识别为正文边界——在其后输入的内容正常提交生效，不再只停留在显示层；删空标记与正文行首退格统一走列表项取消路径——fork PR #26
+- 修复：工具栏取消列表与行首退格统一行为——取消嵌套列表项保留段落层级与前后顺序，父项内容不再被错误拼接，可一次撤销恢复——fork PR #26
+- 修复：松散列表中标记与首段错误分行，手动重新输入列表标记的同类错行一并修正——fork PR #26
+
 # 4.4.1-suian 2026-9-19
 
 本版修复 Markdown 块行号与宿主文档的偏移，以及图表弹窗连线在浅色主题下对比度不足两项问题。
@@ -940,3 +950,4 @@ Other:
 [4.3.0-fork.2]: https://github.com/ONEGAYI/vscode-office/compare/v4.3.0-fork.1...v4.3.0-fork.2
 [4.4.0-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.3.0-fork.2...v4.4.0-suian
 [4.4.1-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.4.0-suian...v4.4.1-suian
+[4.4.2-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.4.1-suian...v4.4.2-suian
