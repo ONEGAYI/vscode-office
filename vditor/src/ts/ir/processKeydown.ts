@@ -69,6 +69,8 @@ export const processKeydown = (vditor: IVditor, event: KeyboardEvent) => {
         skipZwspAfterInlineMath(getEditorRange(vditor), vditor);
     }
 
+    // Recording the first undo caret can split a text node and expand a collapsed range.
+    const wasCollapsed = getEditorRange(vditor).collapsed;
     // 添加第一次记录 undo 的光标
     if (event.key.indexOf("Arrow") === -1 && event.key !== "Meta" && event.key !== "Control" && event.key !== "Alt" &&
         event.key !== "Shift" && event.key !== "CapsLock" && event.key !== "Escape" && !/^F\d{1,2}$/.test(event.key)) {
@@ -190,6 +192,22 @@ export const processKeydown = (vditor: IVditor, event: KeyboardEvent) => {
 
     const headingElement = hasClosestByHeadings(startContainer);
     if (headingElement) {
+        // Native Enter clones the heading into an empty H1-H6 that Markdown omits,
+        // leaving a phantom heading (and its level label) in the rendered editor.
+        if (event.key === "Enter" && !isCtrl(event) && !event.shiftKey && !event.altKey && wasCollapsed &&
+            getSelectPosition(headingElement, vditor.ir.element, range).start === 0) {
+            const paragraph = document.createElement("p");
+            paragraph.setAttribute("data-block", "0");
+            paragraph.appendChild(document.createElement("br"));
+            headingElement.before(paragraph);
+            range.collapse(true);
+            setSelectionFocus(range);
+            expandMarkerWithMathSync(range, vditor);
+            recordHistoryChange(vditor);
+            event.preventDefault();
+            return true;
+        }
+
         // enter++: 标题变大
         if (matchHotKey("⌘=", event)) {
             const headingMarkerElement = headingElement.querySelector(".vditor-ir__marker--heading");
@@ -226,6 +244,24 @@ export const processKeydown = (vditor: IVditor, event: KeyboardEvent) => {
 
     const blockElement = hasClosestBlock(startContainer);
     if (event.key === "Backspace" && !isCtrl(event) && !event.shiftKey && !event.altKey && range.toString() === "") {
+        if (headingElement && wasCollapsed &&
+            getSelectPosition(headingElement, vditor.ir.element, range).start === 0) {
+            const previousElement = headingElement.previousElementSibling;
+            // Native Backspace merges the heading into P; IR parsing then drops its marker.
+            // Remove only an empty paragraph, keeping the heading and its caret intact.
+            if (previousElement?.tagName === "P" &&
+                previousElement.textContent.replace(/\u200b/g, "").trim() === "" &&
+                !previousElement.querySelector(":not(br):not(wbr)")) {
+                previousElement.remove();
+                range.collapse(true);
+                setSelectionFocus(range);
+                expandMarkerWithMathSync(range, vditor);
+                recordHistoryChange(vditor);
+                event.preventDefault();
+                return true;
+            }
+        }
+
         if (fixDelete(vditor, range, event, pElement)) {
             return true;
         }
