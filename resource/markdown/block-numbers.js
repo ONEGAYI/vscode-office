@@ -66,6 +66,8 @@
   var sourceText;
   var enabled = true;
   var observer = null;
+  var paragraphResizeObserver = null;
+  var watchedParagraphs = [];
   var scheduled = false;
 
   // ── block scanner ────────────────────────────────────────────────────────
@@ -237,7 +239,45 @@
     for (var i = 0; i < marked.length; i++) {
       marked[i].removeAttribute(ATTR);
       marked[i].style.removeProperty('--lineno');
+      marked[i].style.removeProperty('--lineno-offset');
     }
+    watchParagraphSizes([]);
+  }
+
+  // Lute omits leading blank lines from a paragraph's source block, but the live
+  // DOM retains them while editing. Keep its number beside the first content line.
+  function paragraphLeadingBreaks(paragraph) {
+    var walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    var count = 0;
+    var node;
+    while ((node = walker.nextNode())) {
+      if (node.nodeType === 3) {
+        var prefix = node.textContent.match(/^[\s\u200b]*/)[0];
+        count += (prefix.match(/\n/g) || []).length;
+        if (prefix.length < node.textContent.length) break;
+      } else if (node.tagName === 'BR') {
+        count++;
+      } else if (node.tagName === 'IMG' || node.tagName === 'SVG' ||
+          node.getAttribute('contenteditable') === 'false') {
+        break;
+      }
+    }
+    return count;
+  }
+
+  function watchParagraphSizes(paragraphs) {
+    if (typeof ResizeObserver === 'undefined') return;
+    if (!paragraphResizeObserver && paragraphs.length) {
+      paragraphResizeObserver = new ResizeObserver(scheduleSync);
+    }
+    if (!paragraphResizeObserver) return;
+    watchedParagraphs.forEach(function (paragraph) {
+      if (paragraphs.indexOf(paragraph) < 0) paragraphResizeObserver.unobserve(paragraph);
+    });
+    paragraphs.forEach(function (paragraph) {
+      if (watchedParagraphs.indexOf(paragraph) < 0) paragraphResizeObserver.observe(paragraph);
+    });
+    watchedParagraphs = paragraphs;
   }
 
   function sync() {
@@ -266,10 +306,13 @@
       for (var s = 0; s < staleAll.length; s++) {
         staleAll[s].removeAttribute(ATTR);
         staleAll[s].style.removeProperty('--lineno');
+        staleAll[s].style.removeProperty('--lineno-offset');
       }
+      watchParagraphSizes([]);
       return;
     }
 
+    var leadingParagraphs = [];
     for (var k = 0; k < blocks.length; k++) {
       var val = String(starts[k]);
       if (blocks[k].getAttribute(ATTR) !== val) {
@@ -279,13 +322,27 @@
         // token 会让 content: var(--lineno) 替换成 content: 23 而整条失效
         blocks[k].style.setProperty('--lineno', '"' + val + '"');
       }
+      var leading = blocks[k].tagName === 'P' ? paragraphLeadingBreaks(blocks[k]) : 0;
+      if (leading) {
+        var lineHeight = parseFloat(getComputedStyle(blocks[k]).lineHeight);
+        leadingParagraphs.push(blocks[k]);
+        if (Number.isFinite(lineHeight)) {
+          blocks[k].style.setProperty('--lineno-offset', (leading * lineHeight) + 'px');
+        } else {
+          blocks[k].style.removeProperty('--lineno-offset');
+        }
+      } else {
+        blocks[k].style.removeProperty('--lineno-offset');
+      }
     }
+    watchParagraphSizes(leadingParagraphs);
     // 块退化为不可编号形态（如变空 p）时清掉过期行号
     var stale = reset.querySelectorAll('[' + ATTR + ']');
     for (var m = 0; m < stale.length; m++) {
       if (blocks.indexOf(stale[m]) < 0) {
         stale[m].removeAttribute(ATTR);
         stale[m].style.removeProperty('--lineno');
+        stale[m].style.removeProperty('--lineno-offset');
       }
     }
   }
@@ -342,6 +399,7 @@
       observer.disconnect();
       observer = null;
     }
+    watchParagraphSizes([]);
     currentEditor = editor;
     sourceText = options && options.sourceText;
     enabled = options && options.enabled !== undefined ? !!options.enabled : true;

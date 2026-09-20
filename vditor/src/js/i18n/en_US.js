@@ -176,6 +176,8 @@ window.VditorI18n = {
   'imageMaxHeight': 'Max Height',
     'pageWidth': 'Page Width',
     'typewriterMode': 'Typewriter Mode',
+    'enterLineBreak': 'Enter: line break',
+    'enterLineBreakHint': 'On: Enter inserts a line break; Shift+Enter starts a paragraph. Off: the reverse. Body paragraphs only.',
     'blockLineNumbers': 'Block Line Numbers',
     'boldColor': 'Bold Color',
   'boldColorDefault': 'Default',

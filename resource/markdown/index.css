@@ -350,7 +350,7 @@ body.is-web .vditor-context-menu__item--desktop-only:focus-visible {
     content: attr(data-lineno);
     position: absolute;
     left: -58px;
-    top: 0.25em;
+    top: calc(0.25em + var(--lineno-offset, 0px));
     width: 26px;
     text-align: right;
     font-size: 11px;

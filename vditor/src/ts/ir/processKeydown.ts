@@ -1,4 +1,5 @@
 import {Constants} from "../constants";
+import {handleEnterLineBreak} from "../util/enterLineBreak";
 import {tryFocusAdjacentCodeMirror} from "../codeBlock/codeMirrorNavigation";
 import {
     focusCodeMirror,
@@ -79,6 +80,10 @@ export const processKeydown = (vditor: IVditor, event: KeyboardEvent) => {
 
     const range = getEditorRange(vditor);
     const startContainer = range.startContainer;
+
+    if (handleEnterLineBreak(vditor, event, range)) {
+        return true;
+    }
 
     if (!fixGSKeyBackspace(event, vditor, startContainer)) {
         return false;
@@ -192,14 +197,16 @@ export const processKeydown = (vditor: IVditor, event: KeyboardEvent) => {
 
     const headingElement = hasClosestByHeadings(startContainer);
     if (headingElement) {
-        // Native Enter clones the heading into an empty H1-H6 that Markdown omits,
-        // leaving a phantom heading (and its level label) in the rendered editor.
-        if (event.key === "Enter" && !isCtrl(event) && !event.shiftKey && !event.altKey && wasCollapsed &&
+        // Keep Enter's paragraph and Shift+Enter's single source newline distinct.
+        // Native Enter clones the heading; native Shift+Enter moves behind its marker.
+        if (event.key === "Enter" && !isCtrl(event) && !event.altKey && wasCollapsed &&
             getSelectPosition(headingElement, vditor.ir.element, range).start === 0) {
-            const paragraph = document.createElement("p");
-            paragraph.setAttribute("data-block", "0");
-            paragraph.appendChild(document.createElement("br"));
-            headingElement.before(paragraph);
+            const beforeHeading = document.createElement(event.shiftKey ? "br" : "p");
+            if (!event.shiftKey) {
+                beforeHeading.setAttribute("data-block", "0");
+                beforeHeading.appendChild(document.createElement("br"));
+            }
+            headingElement.before(beforeHeading);
             range.collapse(true);
             setSelectionFocus(range);
             expandMarkerWithMathSync(range, vditor);
@@ -248,10 +255,10 @@ export const processKeydown = (vditor: IVditor, event: KeyboardEvent) => {
             getSelectPosition(headingElement, vditor.ir.element, range).start === 0) {
             const previousElement = headingElement.previousElementSibling;
             // Native Backspace merges the heading into P; IR parsing then drops its marker.
-            // Remove only an empty paragraph, keeping the heading and its caret intact.
-            if (previousElement?.tagName === "P" &&
+            // Remove a single line break or an empty paragraph without merging the heading.
+            if (previousElement?.tagName === "BR" || (previousElement?.tagName === "P" &&
                 previousElement.textContent.replace(/\u200b/g, "").trim() === "" &&
-                !previousElement.querySelector(":not(br):not(wbr)")) {
+                !previousElement.querySelector(":not(br):not(wbr)"))) {
                 previousElement.remove();
                 range.collapse(true);
                 setSelectionFocus(range);
