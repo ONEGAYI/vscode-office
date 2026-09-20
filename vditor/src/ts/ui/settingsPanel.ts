@@ -24,6 +24,7 @@ import {
     CODE_BLOCK_MAX_HEIGHT_DEFAULT,
     CODE_BLOCK_MAX_HEIGHT_OPTIONS,
     TYPEWRITER_MODE_KEY,
+    ENTER_LINE_BREAK_KEY,
     getAIPrompts,
     setAIPrompts,
     AIPrompt,
@@ -313,6 +314,8 @@ export const buildSettingsPanelHTML = (vditor: IVditor) => {
         <div class="${SETTINGS_PANEL_CLASS}__section">
             <div class="${SETTINGS_PANEL_CLASS}__title">Edit Mode</div>
             ${buildEditModeSegmentedHTML(vditor.currentMode)}
+            ${buildToggleHTML(ENTER_LINE_BREAK_KEY, i18n.enterLineBreak ?? "Enter: line break", getGlobalLocalStorageSetting<boolean>(ENTER_LINE_BREAK_KEY, false) === true)}
+            <div class="${SETTINGS_PANEL_CLASS}__ai-prompt-empty">${i18n.enterLineBreakHint ?? "On: Enter inserts a line break; Shift+Enter starts a paragraph. Applies to body paragraphs only."}</div>
         </div>
         <div class="${SETTINGS_PANEL_CLASS}__section">
             <div class="${SETTINGS_PANEL_CLASS}__title">Font Size</div>

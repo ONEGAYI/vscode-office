@@ -146,6 +146,8 @@ window.VditorI18n = {
   'imageMaxHeight': '最大高度',
     'pageWidth': '頁面寬度',
     'typewriterMode': '打字機模式',
+    'enterLineBreak': 'Enter 段內換行',
+    'enterLineBreakHint': '開啟：Enter 段內換行，Shift+Enter 建立段落；關閉時相反。僅作用於正文段落。',
     'blockLineNumbers': '段落行號',
   'boldColor': '粗體顏色',
   'boldColorDefault': '預設',

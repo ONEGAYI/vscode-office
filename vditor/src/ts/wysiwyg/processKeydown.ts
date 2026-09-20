@@ -1,4 +1,5 @@
 import { Constants } from "../constants";
+import { handleEnterLineBreak } from "../util/enterLineBreak";
 import { focusCodeBlockChromeLanguage } from "../codeBlock/codeBlockChrome";
 import { tryFocusAdjacentCodeMirror } from "../codeBlock/codeMirrorNavigation";
 import {
@@ -83,6 +84,10 @@ export const processKeydown = (vditor: IVditor, event: KeyboardEvent) => {
 
     const range = getEditorRange(vditor);
     const startContainer = range.startContainer;
+
+    if (handleEnterLineBreak(vditor, event, range)) {
+        return true;
+    }
 
     if (!fixGSKeyBackspace(event, vditor, startContainer)) {
         return false;
