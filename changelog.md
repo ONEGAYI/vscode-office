@@ -1,5 +1,16 @@
 # Change log
 
+# 4.5.0-suian 2026-9-21
+
+本版新增 Enter 段内换行开关（正文软硬换行对调），并修复 IR 模式标题前换行/退格的结构问题、标题标记换行与段落行号定位。
+
+Markdown 编辑器：
+
+- 新增：Enter 段内换行开关（编辑器 Settings 面板）——开启后正文 Enter 与 Shift+Enter 对调，Enter 直接段内软换行、Shift+Enter 分段；偏好持久化保存，IR 与 Visual 双模式生效，表格等结构块内保留 Enter 专用操作——fork PR #28
+- 修复：标题标记前按 Enter 插入普通空段落，不再产生渲染层残留 H1–H6 标识却不进入 Markdown 的空标题；标记前按 Backspace 仅移除上一空段落，保留标题级别、内容、光标与撤销重做——fork PR #27
+- 修复：标题标记左侧 Shift+Enter 只增加一个源码换行，光标、退格与撤销重做行为保持不变——fork PR #28
+- 修复：段落源码行号跟随段首空行与字体行高变化对齐正文——fork PR #28
+
 # 4.4.2-suian 2026-9-20
 
 本版修复列表标记聚焦编辑的三处边界问题：标记内尾部输入不生效、取消嵌套层级时段落结构错乱、松散列表标记与首段错行。
@@ -951,3 +962,4 @@ Other:
 [4.4.0-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.3.0-fork.2...v4.4.0-suian
 [4.4.1-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.4.0-suian...v4.4.1-suian
 [4.4.2-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.4.1-suian...v4.4.2-suian
+[4.5.0-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.4.2-suian...v4.5.0-suian
