@@ -72,6 +72,63 @@ html:has(.word-viewer) {
     border-bottom: 1px solid #ffe58f;
 }
 
+.word-embedded-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 4px 56px 4px 8px;
+}
+
+.word-banner-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.word-banner-toggle:hover {
+    background: rgba(128, 128, 128, 0.15);
+}
+
+.word-banner-toggle:focus-visible {
+    outline: 2px solid var(--vscode-focusBorder, #1677ff);
+    outline-offset: 1px;
+}
+
+.word-banner-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.word-banner-details [role="toolbar"] {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.word-embedded-banner--collapsed {
+    align-items: center;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+.word-banner-summary {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    line-height: 20px;
+}
+
 /* ── 亮暗切换按钮（样式参考 Excel）──── */
 .word-viewer .dark-mode-toggle {
     position: fixed;
