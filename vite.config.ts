@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { vditorDevPlugin, vditorProdBuildPlugin } from './vite/vditorPlugin'
+import { emfWorkerPlugin } from './vite/emfWorkerPlugin'
 
 const cwd = process.cwd()
 const argv = process.argv
@@ -19,6 +20,7 @@ if (argv.join(',').includes('mode')) {
 // https://vitejs.dev/config/
 export default defineConfig(({ command, mode }) => ({
   plugins: [
+    emfWorkerPlugin(),
     react(),
     command === 'serve' ?
       vditorDevPlugin() : vditorProdBuildPlugin()

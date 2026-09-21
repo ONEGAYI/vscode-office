@@ -7,6 +7,9 @@ import { handler, vscodeApi } from "../../util/vscode";
 import { loadOfficeBuffer } from "../../util/loadOfficeContent";
 import SponsorBar from "../components/SponsorBar";
 import "./Word.css";
+import { installEmfPreviews } from "./emfPreview";
+import { renderEmfPreview } from "./emfRenderer";
+import { hasEmbeddedOfficeObjects } from "./embeddedObjects";
 
 type WordColorMode = "light" | "adaptive";
 
@@ -48,7 +51,11 @@ interface WordOpenPayload {
 
 export default function Word() {
     const editorRef = useRef<DocxEditorRef>(null);
+    const viewerRef = useRef<HTMLDivElement>(null);
     const readOnlyRef = useRef(false);
+    const embeddedReadOnlyRef = useRef(false);
+    const loadSequence = useRef(0);
+    const [embeddedReadOnly, setEmbeddedReadOnly] = useState(false);
     const [colorMode, setColorMode] = useState<WordColorMode>(loadWordColorMode);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -61,6 +68,11 @@ export default function Word() {
 
     const adaptiveColorMode = colorMode === "adaptive";
 
+    useEffect(() => {
+        if (!viewerRef.current) return;
+        return installEmfPreviews(viewerRef.current, renderEmfPreview);
+    }, [documentKey]);
+
     const toggleColorMode = () => {
         setColorMode((prev) => {
             const next: WordColorMode = prev === "adaptive" ? "light" : "adaptive";
@@ -70,6 +82,7 @@ export default function Word() {
     };
 
     const emitSave = useCallback((buffer: ArrayBuffer) => {
+        if (embeddedReadOnlyRef.current) return;
         const bytes = new Uint8Array(buffer);
         const content: number[] = new Array(bytes.length);
         for (let i = 0; i < bytes.length; i++) {
@@ -79,6 +92,7 @@ export default function Word() {
     }, []);
 
     const handleSave = useCallback(async () => {
+        if (embeddedReadOnlyRef.current) return;
         const buffer = await editorRef.current?.save();
         if (!buffer) {
             return;
@@ -87,24 +101,31 @@ export default function Word() {
     }, [emitSave]);
 
     const loadDocument = useCallback(async (payload: WordOpenPayload) => {
+        const sequence = ++loadSequence.current;
         setLoading(true);
         setError(null);
         setDocumentBuffer(undefined);
+        // Block stale callbacks while a different document is being loaded.
+        embeddedReadOnlyRef.current = true;
 
         try {
-            const fileReadOnly = payload.readOnly === true;
+            const buffer = await loadOfficeBuffer(payload);
+            const containsObjects = await hasEmbeddedOfficeObjects(buffer);
+            if (sequence !== loadSequence.current) return;
+            embeddedReadOnlyRef.current = containsObjects;
+            setEmbeddedReadOnly(containsObjects);
+            const fileReadOnly = payload.readOnly === true || containsObjects;
             readOnlyRef.current = fileReadOnly;
             setReadOnly(fileReadOnly);
             setFileName(payload.fileName ?? "");
             setDocumentKey(`${payload.documentCacheId ?? ""}-${payload.nonce ?? Date.now()}`);
             skipCommentsAutoOpenRef.current = true;
             setCommentsSidebarOpen(false);
-            const buffer = await loadOfficeBuffer(payload);
             setDocumentBuffer(buffer);
         } catch (e) {
-            setError(e instanceof Error ? e.message : "Failed to load document");
+            if (sequence === loadSequence.current) setError(e instanceof Error ? e.message : "Failed to load document");
         } finally {
-            setLoading(false);
+            if (sequence === loadSequence.current) setLoading(false);
         }
     }, []);
 
@@ -128,7 +149,7 @@ export default function Word() {
     }, [handleSave]);
 
     return (
-        <div className={`word-viewer${adaptiveColorMode ? " word-viewer--vscode-theme" : ""}`}>
+        <div ref={viewerRef} className={`word-viewer${adaptiveColorMode ? " word-viewer--vscode-theme" : ""}`}>
             <button
                 type="button"
                 className="dark-mode-toggle"
@@ -140,7 +161,12 @@ export default function Word() {
             </button>
             <Spin spinning={loading} fullscreen />
             {error && <Alert type="error" message={error} showIcon style={{ margin: 16 }} />}
-            {readOnly && !loading && !error && documentBuffer && (
+            {embeddedReadOnly && !loading && !error && documentBuffer && (
+                <div className="word-readonly-banner" data-office-embedded-readonly>
+                    此文档含嵌入对象，当前仅支持阅读，已禁用编辑和保存以保留原始对象。EMF 预览可能存在显示差异。
+                </div>
+            )}
+            {readOnly && !embeddedReadOnly && !loading && !error && documentBuffer && (
                 <div className="word-readonly-banner">Read-only — edits will be saved to a new file</div>
             )}
             {documentBuffer && !loading && !error && (
