@@ -46,6 +46,7 @@
 - 样式操作选区保留体系（b3cdd5f，上游 #615）：wbr 单点锚表达不了选区范围，改为 strip-ZWSP 文本偏移快照 + 内容锚校验（`vditor/src/ts/util/selection.ts` ↔ `textOffset.ts`），同步段内重建非 collapsed 选区，失败/错位退回 wbr 兜底（宁可塌缩不错选）；listToggle（含批量/取消/check 空格 +1）、quote 四分支、IR 内联样式添加与移除（marker 平移 ±长度）、wysiwyg inline-code 移除均经此管道
 - list marker 聚焦编辑模块（`resource/markdown/list-marker.js`，双模式，fork PR #14）：Lute 门必须覆盖全部 DOM↔HTML 入口（SpinVditorDOM/SpinVditorIRDOM/VditorDOM2Md/VditorIRDOM2Md/两个 2HTML/两个 HTML2Vditor*——**VditorIRDOM2Md 是 ir 的 getValue 路径**，缺它 span 文本被粘进 li 内容）；ir 与 wysiwyg 的列表 DOM/属性模型完全一致（li 带 data-marker），模式差异只在守卫与 CSS scope；聚焦行 live span 会经异步 selectionchange 重建（by design，保存靠门剥离）；marker 尾部 NBSP 是正文边界，输入前须 fold live span，正文行首 Backspace 与删空 marker 都复用 vditor 列表项取消路径；取消嵌套项须将当前列表拆为前段/段落/后段并保持父项 loose，父项裸正文与取消项都包成 p，否则 Lute 会拼段；loose 列表（`data-tight=false` 或缺属性）的 CSS/live marker 必须浮动到首个 p 同行
 - 用户实测：键盘穿透问题在本 fork 无需修复（勿重复移植）
+- Word 嵌入对象链路（4.6.0-suian）：EMF 预览的 vendor 代码（`src/react/view/word/vendor/`，源自 UDOC 项目并附 LICENSE）是第三方代码，不当作本仓源码修改；EMF→canvas 转换跑在限时 Blob Worker（`emf.worker.ts`，经 `vite/emfWorkerPlugin.ts` 内联打包，兼顾开发宿主跨源加载与生产产物）；保存保真依赖 `preservedBody.ts` 按编辑后段落顺序重建正文并原样回填嵌入块，改 Word 保存路径时勿绕过它，否则 OLE 数据丢失
 
 ## 进行中工作索引
 

@@ -1,5 +1,16 @@
 # Change log
 
+# 4.6.0-suian 2026-9-21
+
+本版为 Word 文档编辑器落地嵌入对象支持：新增 EMF 矢量图预览，保存时保留原始嵌入对象数据，并开放正文增删与块级编辑。
+
+Word 文档编辑器：
+
+- 新增：EMF 格式嵌入对象预览——Office 文档内嵌的 EMF 矢量图正常显示，转换在限时 Worker 中执行，开发宿主与打包产物均可用，第三方许可证随 VSIX 分发——提交 b7e2cd6
+- 新增：保存时保留原始嵌入对象——按编辑后的段落顺序重建正文，OLE 嵌入块、数据及引用关系原样恢复，不再因编辑保存而丢失——提交 c46ff2c
+- 新增：正文增删与段落拆分，提供前后插段与整块移动入口，复杂块内部内容受保护——提交 c46ff2c
+- 新增：嵌入对象保护提示合并为单条，左侧折叠按钮可收起为紧凑单行——提交 c46ff2c
+
 # 4.5.0-suian 2026-9-21
 
 本版新增 Enter 段内换行开关（正文软硬换行对调），并修复 IR 模式标题前换行/退格的结构问题、标题标记换行与段落行号定位。
@@ -963,3 +974,4 @@ Other:
 [4.4.1-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.4.0-suian...v4.4.1-suian
 [4.4.2-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.4.1-suian...v4.4.2-suian
 [4.5.0-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.4.2-suian...v4.5.0-suian
+[4.6.0-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.5.0-suian...v4.6.0-suian
