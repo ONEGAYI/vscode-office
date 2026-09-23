@@ -1,5 +1,23 @@
 # Change log
 
+# 4.7.0-suian 2026-9-23
+
+本版将 Markdown 渲染器改为按需启用，`.md` 文件默认回归 VS Code 内置文本编辑器打开，需要富文本时手动切换；同时落地脚注交互、分割线显示、段落行号、空有序列表项等一批编辑修复，并完成安全加固与性能优化。
+
+Markdown 编辑器：
+
+- 新增：Markdown 渲染器按需启用——`.md` / `.markdown` 默认改用 VS Code 内置文本编辑器打开，插件渲染器不再抢占默认关联；需要富文本渲染时经标题栏铅笔按钮、命令面板 Switch markdown editor 或 `Ctrl+Alt+E` 手动切换（双向），想恢复插件默认可配置 `workbench.editorAssociations` 指向插件渲染器——fork PR #34
+- 修复：脚注交互与提示布局——脚注引用支持单击跳转，定义末尾常驻回跳箭头，重复引用时返回最近点击位置；长脚注提示气泡按最大宽度换行不再越出视口；列表缩进/反缩进连同脚注与链接定义重渲染，`[^xx]` 不再退化为纯文本；普通输入仅在内容高度变化时重新定位箭头，长文档逐键输入不再全量测量——fork PR #29
+- 修复：连续链接引用定义的文档（如本仓 changelog.md）初次打开不再全篇丢失段落行号——拆分/合并后的 DOM 只标注可确定的起始行，其余不显示可能出错的行号——fork PR #31
+- 修复：分割线随编辑焦点切换显示——输入独立一行 `---` 后光标离开即渲染为分割线，点击横线或将光标移到邻位还原为可编辑源码，IR 与 WYSIWYG 双模式生效；保留原始标记来源，`***`、`___` 等写法不被改写成 `---`，Setext 标题、围栏代码等形近语法不受影响——fork PR #31 / #32
+- 修复：空有序列表项不再丢失——空段落经工具栏列表按钮或 `Ctrl+O` 转出的空列表项正常随文档保存，重新打开后仍可继续输入——fork PR #33
+
+安全与性能：
+
+- 净化 Markdown 导出与 Excel HTML 剪贴板内容，转义 EPUB 描述，收窄 webview 外链协议与本地资源访问范围——fork PR #30
+- DOCX 转换隔离到限时、限内存的 Worker；升级 SheetJS 与 EPUB XML 解析依赖，移除存在安全公告的 `file-type`——fork PR #30
+- 整页替换时释放 CodeMirror 实例，优化大列表纯文本输入，HTTP 响应流式读取上限可配置；不再删除 VS Code 共用 WebStorage——fork PR #30
+
 # 4.6.0-suian 2026-9-21
 
 本版为 Word 文档编辑器落地嵌入对象支持：新增 EMF 矢量图预览，保存时保留原始嵌入对象数据，并开放正文增删与块级编辑。
@@ -975,3 +993,4 @@ Other:
 [4.4.2-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.4.1-suian...v4.4.2-suian
 [4.5.0-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.4.2-suian...v4.5.0-suian
 [4.6.0-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.5.0-suian...v4.6.0-suian
+[4.7.0-suian]: https://github.com/ONEGAYI/vscode-office/compare/v4.6.0-suian...v4.7.0-suian
