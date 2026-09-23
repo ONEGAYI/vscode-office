@@ -14,3 +14,11 @@ test('the pencil is available for every extension accepted by the comparison men
     }
     assert.equal(visible('.txt'), false);
 });
+
+test('the markdown viewer stays opt-in so .md files open with the default editor', () => {
+    const viewer = manifest.contributes.customEditors
+        .find(editor => editor.viewType === 'cweijan.markdownViewer');
+    // Fork behavior: without priority "option" the viewer would take over .md
+    // files again, and the switch command above would become the opt-out.
+    assert.equal(viewer.priority, 'option');
+});

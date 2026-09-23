@@ -27,19 +27,19 @@ Office Viewer 内置完整的 Git 历史工作区，让你无需离开 VS Code �
 
 ## Markdown
 
-集成 Markdown 所见即所得编辑器。
+`.md` 文件默认使用 VS Code 内置编辑器打开。所见即所得编辑器需手动启用：点击编辑器标题栏的铅笔按钮、在命令面板执行**切换 Markdown 编辑器**，或按 `Ctrl Alt E`，再次执行即可切回。
 
 在资源管理器中选中两个 `.md` 或 `.markdown` 文件，右键选择**纯文本比较所选 Markdown 文件**，即可直接打开 VS Code 的纯文本对照视图。文件左右顺序遵循资源管理器传入的选择顺序；普通 Markdown 文件的默认打开方式不变。
 
 在 Markdown 对照视图中，铅笔按钮可切换纯文本对照与默认关联的 Markdown 编辑器对照。此行为取决于 VS Code 是否支持自定义编辑器对照；新版 VS Code 可能始终使用纯文本对照。未保存内容保留在原文件缓冲区中，带草稿的源标签可能保留至保存。对于无法提供文件对信息、且文件名有歧义的旧版编辑器对照，请通过上述右键菜单明确选择文件。
 
-如需使用 VS Code 原生 Markdown 编辑器，请在 `settings.json` 中添加以下配置：
+如需恢复所见即所得编辑器为默认打开方式，请在 `settings.json` 中添加以下配置：
 
 ```json
 {
     "workbench.editorAssociations": {
-        "*.md": "default",
-        "*.markdown": "default"
+        "*.md": "cweijan.markdownViewer",
+        "*.markdown": "cweijan.markdownViewer"
     }
 }
 ```
@@ -54,7 +54,7 @@ Office Viewer 内置完整的 Git 历史工作区，让你无需离开 VS Code �
 - 硬换行: `Shift+Enter` / `⇧ Enter`
 - 编辑超链接: `Alt+Enter` / `^ Enter`
 - 设置 CodeMirror 语言: `Alt+Enter` / `^ Enter`
-- 在 VS Code 中编辑: `Ctrl Alt E` / `⌘ ^ E`
+- 切换 Markdown 编辑器: `Ctrl Alt E` / `⌘ ^ E`
 - 粘贴为纯文本: `Ctrl+Shift+V` / `⌘ ⇧ V`
 
 ## 其他功能
