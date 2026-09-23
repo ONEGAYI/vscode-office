@@ -519,7 +519,30 @@
   }
 
   &-footnotes__goto-ref {
-    text-decoration: none;
+    position: absolute;
+    z-index: 20;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    color: var(--second-color);
+    background: transparent;
+    font: inherit;
+    font-size: 20px;
+    line-height: 24px;
+    text-align: center;
+    cursor: pointer;
+
+    &:hover {
+      color: var(--link-color, @blurColor);
+      background: var(--vditor-popover-secondary-btn-bg);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--link-color, @blurColor);
+      outline-offset: 2px;
+    }
   }
 
   &-toc {

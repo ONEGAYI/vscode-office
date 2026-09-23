@@ -58,12 +58,12 @@ handler.on("open", async (md) => {
     onSponsorLogoClick: () => handler.emit('openSponsor'),
     onSponsorSiteClick: () => handler.emit('openExternal', 'https://database-client.com/'),
     onLinkClick(payload, event) {
-      const isCompose = event.metaKey || event.ctrlKey;
-      if (payload.action !== "dblclick" && !(payload.action === "click" && isCompose)) {
+      // Vditor handles footnote navigation and its return action on a plain click.
+      if (payload.type === "footnote-ref") {
         return;
       }
-      if (payload.type === "footnote-ref") {
-        editor.scrollToBlock(`footnote:${payload.href}`);
+      const isCompose = event.metaKey || event.ctrlKey;
+      if (payload.action !== "dblclick" && !(payload.action === "click" && isCompose)) {
         return;
       }
       if (payload.href?.startsWith("#")) {

@@ -27,14 +27,17 @@ const normalizeFragment = (fragment: string) => {
 };
 
 const findFootnoteElement = (editorElement: HTMLElement, label: string): HTMLElement | null => {
-    const normalizedLabel = label.trim();
+    const normalizedLabel = label.trim().replace(/^\^/, "");
     if (!normalizedLabel) {
         return null;
     }
     const escapedLabel = CSS.escape(normalizedLabel);
+    const escapedMarker = CSS.escape(`^${normalizedLabel}`);
     const selectors = [
         `[data-type="footnotes-def"][data-marker="${escapedLabel}"]`,
+        `[data-type="footnotes-def"][data-marker="${escapedMarker}"]`,
         `[data-type="footnotes-block"] li[data-marker="${escapedLabel}"]`,
+        `[data-type="footnotes-block"] li[data-marker="${escapedMarker}"]`,
     ];
     for (const selector of selectors) {
         const footnote = editorElement.querySelector(selector);

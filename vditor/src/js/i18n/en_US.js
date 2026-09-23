@@ -66,6 +66,7 @@ window.VditorI18n = {
   'edit-mode-ir-desc': 'Markdown with live preview',
   'fileTypeError': 'file type is error',
   'footnoteRef': 'Footnote Ref',
+  'footnoteBack': 'Back to reference',
   'generate': 'Generating',
   'headings': 'Headings',
   'heading1': 'Heading 1',
