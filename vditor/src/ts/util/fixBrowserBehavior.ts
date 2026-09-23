@@ -308,6 +308,11 @@ const setListMarkers = (list: HTMLElement, type: string) => {
     });
 };
 
+// Lute 序列化时会丢弃完全没有内容节点的 li。空段落转列表时保留一个
+// <br>，使“1. ”这样的空列表项仍能进入 Markdown；wbr 继续定位光标。
+const listItemContentHTML = (block: HTMLElement, html = block.innerHTML): string =>
+    block.tagName === "P" && (html === "" || html === "<wbr>") ? `${html}<br>` : html;
+
 /** 顶层列表块是否已是目标类型：任务列表要求全部 li 已带 checkbox，
  *  普通无序列表要求全部 li 不带（混合态视为待切换） */
 const isTargetListBlock = (block: Element, type: string) => {
@@ -329,7 +334,7 @@ const listItemHTML = (block: HTMLElement, type: string): string => {
         // 载体，必须保留，故仅按 heading 特征收窄剔除
         clone.querySelectorAll(".vditor-ir__marker--heading, [data-type='heading-marker']")
             .forEach((marker) => marker.remove());
-        const inner = clone.innerHTML.trimLeft();
+        const inner = listItemContentHTML(clone, clone.innerHTML.trimLeft());
         // Checkbox spacing is CSS layout, not document text: inserting spaces
         // here changes every later text offset and invalidates the selection.
         return type === "check"
@@ -588,19 +593,20 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
                 blockElement = vditor[vditor.currentMode].element.querySelector("p");
                 blockElement.innerHTML = "<wbr>";
             }
+            const contentHTML = listItemContentHTML(blockElement);
             if (type === "check") {
                 blockElement.insertAdjacentHTML("beforebegin",
-                    `<ul data-block="0"><li class="vditor-task"><input type="checkbox" /> ${blockElement.innerHTML}</li></ul>`);
+                    `<ul data-block="0"><li class="vditor-task"><input type="checkbox" /> ${contentHTML}</li></ul>`);
                 blockElement.remove();
                 restoreShift = 1;
             } else if (type === "list") {
                 blockElement.insertAdjacentHTML("beforebegin",
-                    `<ul data-block="0"><li>${blockElement.innerHTML}</li></ul>`);
+                    `<ul data-block="0"><li>${contentHTML}</li></ul>`);
                 setListMarkers(blockElement.previousElementSibling as HTMLElement, type);
                 blockElement.remove();
             } else if (type === "ordered-list") {
                 blockElement.insertAdjacentHTML("beforebegin",
-                    `<ol data-block="0"><li>${blockElement.innerHTML}</li></ol>`);
+                    `<ol data-block="0"><li>${contentHTML}</li></ol>`);
                 setListMarkers(blockElement.previousElementSibling as HTMLElement, type);
                 blockElement.remove();
             }

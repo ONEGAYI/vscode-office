@@ -183,6 +183,78 @@ function fireKey(ctx, key, opts = {}) {
 
 const settle = () => sleep(120);
 
+// Markdown 的空行在解析时不会成为可编辑块；这里模拟用户在 1 与 2 之间
+// 按 Enter 得到的空段落，再把光标放在其中。
+function insertEmptyParagraphBetween(ctx) {
+  const reset = resetEl(ctx);
+  const [first, second] = Array.from(reset.children).filter((el) => el.tagName === 'P');
+  assert.ok(first && second, '前置：1 和 2 均为段落');
+  const empty = ctx.document.createElement('p');
+  empty.setAttribute('data-block', '0');
+  // Chromium 在空段落按 Enter 后实际得到的是没有子节点的 <p>。
+  empty.innerHTML = '';
+  first.insertAdjacentElement('afterend', empty);
+  const range = ctx.document.createRange();
+  range.setStart(empty, 0);
+  range.collapse(true);
+  const selection = ctx.window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  ctx.document.dispatchEvent(new ctx.window.Event('selectionchange'));
+  return { reset, first, empty, second };
+}
+
+describe('list-ops: 空段落有序列表插入', { skip: DIST_READY ? false : 'vditor/dist 未构建：先在 vditor/ 目录执行构建' }, () => {
+  for (const mode of ['wysiwyg', 'ir']) {
+    for (const action of ['toolbar', 'hotkey']) {
+      it(`${mode} ${action}: 1 与 2 之间的空段落变为有序列表空项，光标留在项内`, async () => {
+        const ctx = await boot('1\n\n2\n', { mode, liveMarkers: true });
+        try {
+          const { reset, first, second } = insertEmptyParagraphBetween(ctx);
+          if (action === 'toolbar') {
+            clickToolbar(ctx, 'ordered-list');
+          } else {
+            fireKey(ctx, 'o', { ctrlKey: true });
+          }
+          await settle();
+
+          const ol = reset.querySelector('ol');
+          assert.ok(ol, '应生成有序列表: ' + reset.innerHTML);
+          assert.equal(first.nextElementSibling, ol, '列表应位于 1 后');
+          assert.equal(ol.nextElementSibling, second, '列表应位于 2 前');
+          const li = ol.querySelector(':scope > li');
+          assert.ok(li, '应有一个列表项: ' + reset.innerHTML);
+          assert.equal(li.getAttribute('data-marker'), '1.');
+          assert.equal(li.textContent.trim(), '');
+          assert.match(ctx.window.vditor.getValue(), /^1\.[ \t]*$/m,
+            '保存的 Markdown 应含空有序列表项');
+          assert.ok(li.contains(ctx.window.getSelection().anchorNode),
+            '光标应位于列表项内: ' + reset.innerHTML);
+        } finally {
+          ctx.window.close();
+        }
+      });
+    }
+  }
+
+  it('跨段落批量转换时也保留中间空列表项', async () => {
+    const ctx = await boot('1\n\n2\n', { liveMarkers: true });
+    try {
+      const { reset, first, second } = insertEmptyParagraphBetween(ctx);
+      selectFromTo(ctx, first, second);
+      clickToolbar(ctx, 'ordered-list');
+      await settle();
+      const items = reset.querySelectorAll('ol > li');
+      assert.equal(items.length, 3);
+      assert.equal(items[1].textContent.trim(), '');
+      assert.match(ctx.window.vditor.getValue(), /^2\.[ \t]*$/m,
+        '批量转换的空项应进入 Markdown');
+    } finally {
+      ctx.window.close();
+    }
+  });
+});
+
 // ── K：无序列表快捷键 ⇧⌘O ───────────────────────────────────────────────
 
 describe('list-ops: unordered list hotkey (K)', { skip: DIST_READY ? false : 'vditor/dist 未构建：先在 vditor/ 目录执行构建' }, () => {
