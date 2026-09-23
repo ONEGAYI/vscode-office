@@ -2229,5 +2229,17 @@ export const buildEditorHtmlForMarkdown = (vditor: IVditor) => {
             parts.code.style.display = "";
         }
     }
+    // Lute 会跳过没有内容节点的 li；重载 `1. ` 后，空项可能只剩零宽
+    // 光标字符。仅对真实列表的空 li，在导出副本中补 br，避免改写属性值
+    // 或编辑器里偶然出现的非列表 li。
+    for (const item of clone.querySelectorAll("ol > li, ul > li")) {
+        const empty = Array.from(item.childNodes).every((node) =>
+            node.nodeType === Node.TEXT_NODE
+                ? (node.textContent || "").replace(/\u200b/g, "").trim() === ""
+                : node.nodeName === "WBR");
+        if (empty) {
+            item.appendChild(clone.ownerDocument.createElement("br"));
+        }
+    }
     return clone.innerHTML;
 };
