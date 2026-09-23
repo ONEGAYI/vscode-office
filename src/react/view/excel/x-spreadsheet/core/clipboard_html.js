@@ -225,9 +225,65 @@ export function formatHtmlClipboard(data, range) {
 
 export function parseHtmlClipboard(html) {
   if (!html) return null;
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  const sourceTable = template.content.querySelector('table');
+  if (!sourceTable) return null;
+
+  const allowedStyles = new Set([
+    'font-family', 'font-size', 'font-weight', 'font-style', 'color', 'background-color',
+    'text-decoration', 'text-decoration-line', 'text-align', 'vertical-align', 'white-space',
+    'border', 'border-top', 'border-right', 'border-bottom', 'border-left',
+  ]);
+  const safeSelectorPart = /^(?:table|thead|tbody|tfoot|tr|td|th)?(?:\.[A-Za-z_][\w-]*)*$/i;
+  const classRules = [];
+  Array.from(template.content.querySelectorAll('style')).slice(0, 16).forEach((styleElement) => {
+    const css = (styleElement.textContent || '').slice(0, 65536);
+    for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      for (const selector of match[1].split(',')) {
+        const trimmed = selector.trim();
+        if (trimmed.length > 256 || !trimmed.split(/\s+/).every(part => part && safeSelectorPart.test(part))) {
+          continue;
+        }
+        const scratch = document.createElement('div');
+        scratch.style.cssText = match[2];
+        classRules.push({ selector: trimmed, declaration: scratch.style });
+        if (classRules.length >= 256) return;
+      }
+    }
+  });
+  const copyDeclaration = (declaration, target) => {
+    for (let i = 0; i < declaration.length; i += 1) {
+      const property = declaration.item(i);
+      const value = declaration.getPropertyValue(property);
+      if (allowedStyles.has(property) && !/url\s*\(|expression\s*\(|@import/i.test(value)) {
+        target.style.setProperty(property, value);
+      }
+    }
+  };
+  const copyStyles = (source, target) => {
+    classRules.forEach(({ selector, declaration }) => {
+      if (source.matches(selector)) copyDeclaration(declaration, target);
+    });
+    copyDeclaration(source.style, target);
+  };
+  const safeTable = document.createElement('table');
+  copyStyles(sourceTable, safeTable);
+  sourceTable.querySelectorAll('tr').forEach((sourceRow) => {
+    const safeRow = safeTable.insertRow();
+    copyStyles(sourceRow, safeRow);
+    sourceRow.querySelectorAll('td,th').forEach((sourceCell) => {
+      const safeCell = document.createElement(sourceCell.tagName.toLowerCase());
+      safeCell.textContent = collectCellText(sourceCell);
+      safeCell.rowSpan = Math.min(1000, Math.max(1, Number.parseInt(sourceCell.getAttribute('rowspan') || '1', 10) || 1));
+      safeCell.colSpan = Math.min(1000, Math.max(1, Number.parseInt(sourceCell.getAttribute('colspan') || '1', 10) || 1));
+      copyStyles(sourceCell, safeCell);
+      safeRow.appendChild(safeCell);
+    });
+  });
   const container = document.createElement('div');
   container.style.cssText = 'position:fixed;left:-10000px;top:-10000px;visibility:hidden;pointer-events:none;';
-  container.innerHTML = html;
+  container.appendChild(safeTable);
   document.body.appendChild(container);
   try {
     const table = container.querySelector('table');

@@ -7,6 +7,9 @@ function stubFn(method: string) {
 }
 
 export const readFileSync = stubFn('readFileSync');
+export const openSync = stubFn('openSync');
+export const readSync = stubFn('readSync');
+export const closeSync = stubFn('closeSync');
 export const writeFileSync = stubFn('writeFileSync');
 export const existsSync = () => false;
 export const mkdirSync = stubFn('mkdirSync');
@@ -22,6 +25,9 @@ export const promises = {
 
 export default {
     readFileSync,
+    openSync,
+    readSync,
+    closeSync,
     writeFileSync,
     existsSync,
     mkdirSync,

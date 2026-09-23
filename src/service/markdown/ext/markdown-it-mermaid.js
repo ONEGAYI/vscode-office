@@ -1,11 +1,11 @@
 import mermaid from 'mermaid'
 
-const mermaidChart = (code) => {
+const mermaidChart = (code, escapeHtml) => {
   try {
     mermaid.parse(code)
-    return `<div class="mermaid">${code}</div>`
+    return `<div class="mermaid">${escapeHtml(code)}</div>`
   } catch ({ str, hash }) {
-    return `<pre>${str}</pre>`
+    return `<pre>${escapeHtml(String(str || code))}</pre>`
   }
 }
 
@@ -39,11 +39,11 @@ const MermaidPlugin = (md) => {
     const token = tokens[idx]
     const code = token.content.trim()
     if (token.info === 'mermaid') {
-      return mermaidChart(code)
+      return mermaidChart(code, md.utils.escapeHtml)
     }
     const firstLine = code.split(/\n/)[0].trim()
     if (firstLine === 'gantt' || firstLine === 'sequenceDiagram' || firstLine.match(/^graph (?:TB|BT|RL|LR|TD);?$/)) {
-      return mermaidChart(code)
+      return mermaidChart(code, md.utils.escapeHtml)
     }
     return temp(tokens, idx, options, env, slf)
   }

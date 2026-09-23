@@ -1356,8 +1356,12 @@ export const destroyAllCodeMirrors = (vditor: IVditor) => {
     if (!editor) {
         return;
     }
-    editor.querySelectorAll(`.${CM_BLOCK_CLASS}`).forEach((block) => {
-        destroyCodeMirror(block as HTMLElement);
+    editor.querySelectorAll(getCodeBlockSelector(vditor.currentMode)).forEach((block) => {
+        const element = block as HTMLElement;
+        lazyCodeMirrorObserver?.unobserve(element);
+        lazyVisibilityCallbacks.delete(element);
+        cancelLazyTeardown(element);
+        destroyCodeMirror(element);
     });
 };
 

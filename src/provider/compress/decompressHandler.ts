@@ -1,5 +1,5 @@
 import { Handler } from "@/common/handler";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { existsSync, rm } from "fs";
 import { platform, tmpdir } from "os";
 import { resolve } from "path";
@@ -11,9 +11,9 @@ export function handlerCommonDecompress(uri: Uri, handler: Handler) {
         .on('showInExplorer', () => {
             const path = uri.fsPath;
             if (platform() == 'win32') {
-                exec(`explorer /select, "${resolve(path)}"`);
+                execFile('explorer.exe', ['/select,', resolve(path)]);
             } else if (platform() == 'darwin') {
-                exec(`open -R "${resolve(path)}"`);
+                execFile('open', ['-R', resolve(path)]);
             } else {
                 commands.executeCommand('vscode.open', Uri.file(uri.fsPath));
             }

@@ -2,7 +2,7 @@ import "./assets/less/index.less";
 import * as adapterRender from "./ts/markdown/adapterRender";
 import { codeRender } from "./ts/markdown/codeRender";
 import { codeMirrorPreviewRender } from "./ts/codeBlock/codeMirrorPreviewRender";
-import { renderCodeBlocks, setupLazyCodeMirrorObserver } from "./ts/codeBlock/codeMirrorManager";
+import { destroyAllCodeMirrors, renderCodeBlocks, setupLazyCodeMirrorObserver } from "./ts/codeBlock/codeMirrorManager";
 import { mathRender } from "./ts/markdown/mathRender";
 import { mermaidRender } from "./ts/markdown/mermaidRender";
 import { outlineRender } from "./ts/markdown/outlineRender";
@@ -382,6 +382,7 @@ class Vditor {
                 enableInput: false,
             });
         } else {
+            destroyAllCodeMirrors(this.vditor);
             this.vditor.ir.element.innerHTML = this.vditor.lute.Md2VditorIRDOM(markdown);
             this.vditor.ir.element
                 .querySelectorAll(".vditor-ir__preview[data-render='2']")
@@ -573,6 +574,7 @@ class Vditor {
     public destroy() {
         // 弹窗挂在 document.body 上，不随编辑器 DOM 销毁；显式关闭以释放 document 级监听
         closeDiagramPopup();
+        destroyAllCodeMirrors(this.vditor);
         this.vditor.element.innerHTML = this.vditor.originalInnerHTML;
         this.vditor.element.classList.remove("vditor");
         this.vditor.element.removeAttribute("style");

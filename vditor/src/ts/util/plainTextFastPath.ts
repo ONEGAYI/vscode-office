@@ -30,5 +30,25 @@ export const canUsePlainTextFastPath = (vditor: IVditor, event: InputEvent): boo
     if (!event.data) {
         return false;
     }
-    return !containsMarkdownTriggerChar(event.data);
+    if (!containsMarkdownTriggerChar(event.data)) {
+        return true;
+    }
+    // A hyphen or plus between letters cannot start a list or thematic break.
+    if (event.data !== "-" && event.data !== "+") {
+        return false;
+    }
+    const selection = getSelection();
+    if (!selection || selection.rangeCount === 0) {
+        return false;
+    }
+    const range = selection.getRangeAt(0);
+    if (!range.collapsed || range.startContainer.nodeType !== 3) {
+        return false;
+    }
+    const text = range.startContainer.textContent || "";
+    const offset = range.startOffset;
+    const isWordCharacter = (char: string) => /[\p{L}\p{N}]/u.test(char);
+    return text.charAt(offset - 1) === event.data
+        && isWordCharacter(text.charAt(offset - 2))
+        && isWordCharacter(text.charAt(offset));
 };

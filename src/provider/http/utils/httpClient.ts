@@ -104,9 +104,18 @@ export class HttpClient {
 
         const contentLength = response.headers.get('content-length');
         const total = contentLength ? Number.parseInt(contentLength, 10) : undefined;
+        const maxResponseBytes = this._settings.maxResponseSizeMB * 1024 * 1024;
         const reader = response.body.getReader();
         const chunks: Uint8Array[] = [];
         let loaded = 0;
+
+        const rejectOversizedResponse = async () => {
+            await reader.cancel();
+            throw new Error(`HTTP response exceeds the configured ${this._settings.maxResponseSizeMB} MiB memory limit`);
+        };
+        if (total !== undefined && total > maxResponseBytes) {
+            return rejectOversizedResponse();
+        }
 
         onProgress?.({ phase: 'receiving', loaded, total });
 
@@ -121,6 +130,9 @@ export class HttpClient {
                 break;
             }
 
+            if (loaded + value.byteLength > maxResponseBytes) {
+                return rejectOversizedResponse();
+            }
             chunks.push(value);
             loaded += value.byteLength;
             onProgress?.({ phase: 'receiving', loaded, total });

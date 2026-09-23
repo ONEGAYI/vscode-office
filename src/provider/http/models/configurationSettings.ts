@@ -12,6 +12,7 @@ import {
 
 interface IRestClientSettings {
     followRedirect: boolean;
+    maxResponseSizeMB: number;
     defaultHeaders: RequestHeaders;
     environmentVariables: { [key: string]: { [key: string]: string } };
     previewOption: PreviewOption;
@@ -25,6 +26,7 @@ interface IRestClientSettings {
 
 export class RestClientSettings implements IRestClientSettings {
     public followRedirect: boolean;
+    public maxResponseSizeMB: number;
     public defaultHeaders: RequestHeaders;
     public environmentVariables: { [key: string]: { [key: string]: string } };
     public previewOption: PreviewOption;
@@ -69,6 +71,9 @@ export class RestClientSettings implements IRestClientSettings {
         const document = getCurrentTextDocument();
         const config = workspace.getConfiguration('vscode-office', document?.uri);
         this.followRedirect = config.get<boolean>('followredirect', true);
+        const configuredLimit = config.get<number>('maxResponseSizeMB', 32);
+        this.maxResponseSizeMB = typeof configuredLimit === 'number' && Number.isFinite(configuredLimit)
+            ? Math.min(128, Math.max(1, Math.trunc(configuredLimit))) : 32;
         this.defaultHeaders = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36 Edg/92.0.902.62'
         };
