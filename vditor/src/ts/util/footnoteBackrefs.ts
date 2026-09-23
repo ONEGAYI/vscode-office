@@ -15,20 +15,30 @@ const getDefinitionLabel = (definition: HTMLElement) => {
     return /^\[\^([^\]]+)\]:/.exec(definition.textContent?.trimStart() || "")?.[1] || "";
 };
 
-const getLastTextRect = (definition: HTMLElement): DOMRect => {
-    const walker = document.createTreeWalker(definition, NodeFilter.SHOW_TEXT);
-    let lastText: Text | null = null;
-    let lastEnd = 0;
-    let node: Text | null;
-    while ((node = walker.nextNode() as Text | null)) {
-        let end = node.data.length;
-        while (end > 0 && /[\s\u200b]/.test(node.data[end - 1])) {
-            end--;
+const getTextEnd = (node: Text) => {
+    let end = node.data.length;
+    while (end > 0 && /[\s\u200b]/.test(node.data[end - 1])) {
+        end--;
+    }
+    return end;
+};
+
+const getLastTextRect = (definition: HTMLElement, cache: Map<HTMLElement, Text>): DOMRect => {
+    let lastText = cache.get(definition) || null;
+    let lastEnd = lastText && definition.contains(lastText) ? getTextEnd(lastText) : 0;
+    if (lastEnd === 0) {
+        lastText = null;
+        const walker = document.createTreeWalker(definition, NodeFilter.SHOW_TEXT);
+        let node: Text | null;
+        while ((node = walker.nextNode() as Text | null)) {
+            const end = getTextEnd(node);
+            if (end > 0) {
+                lastText = node;
+                lastEnd = end;
+            }
         }
-        if (end > 0) {
-            lastText = node;
-            lastEnd = end;
-        }
+        if (lastText) cache.set(definition, lastText);
+        else cache.delete(definition);
     }
     if (!lastText) {
         return definition.getBoundingClientRect();
@@ -43,12 +53,13 @@ const getLastTextRect = (definition: HTMLElement): DOMRect => {
 export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
     const editorElement = host.querySelector<HTMLElement>(".vditor-reset")!;
     const buttons = new Map<HTMLElement, HTMLButtonElement>();
+    const lastTextNodes = new Map<HTMLElement, Text>();
     const lastReferences = new Map<string, { element: HTMLElement; index: number }>();
     const findReferences = (label: string) => Array.from(
         editorElement.querySelectorAll<HTMLElement>(REFERENCE_SELECTOR),
     ).filter((reference) => normalizeLabel(reference.getAttribute("data-footnotes-label") || "") === label);
     const resizeObserver = typeof ResizeObserver === "function"
-        ? new ResizeObserver(() => queueUpdate(false)) : null;
+        ? new ResizeObserver(() => queueUpdate(1)) : null;
 
     const positionButtons = () => {
         if (buttons.size === 0) {
@@ -66,7 +77,7 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
                 button.hidden = true;
                 continue;
             }
-            const textRect = getLastTextRect(definition);
+            const textRect = getLastTextRect(definition, lastTextNodes);
             button.hidden = false;
             let left = textRect.right - hostRect.left + 5;
             let top = textRect.top - hostRect.top + (textRect.height - button.offsetHeight) / 2;
@@ -93,6 +104,7 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
         for (const [definition, button] of buttons) {
             if (!active.has(definition)) {
                 resizeObserver?.unobserve(definition);
+                lastTextNodes.delete(definition);
                 button.remove();
                 buttons.delete(definition);
             }
@@ -125,21 +137,27 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
     };
 
     let updateFrame = 0;
-    let syncNeeded = false;
-    const queueUpdate = (sync: boolean) => {
-        if (!sync && buttons.size === 0) {
+    let pendingUpdate = -1;
+    let lastScrollHeight = editorElement.scrollHeight;
+    // 0: 只在内容高度变化时定位；1: 强制定位；2: 脚注结构变化，重新同步按钮。
+    const queueUpdate = (level: number) => {
+        if (level < 2 && buttons.size === 0) {
             return;
         }
-        syncNeeded ||= sync;
+        pendingUpdate = Math.max(pendingUpdate, level);
         if (updateFrame) {
             return;
         }
         updateFrame = requestAnimationFrame(() => {
             updateFrame = 0;
-            if (syncNeeded) {
-                syncNeeded = false;
+            const levelToApply = pendingUpdate;
+            pendingUpdate = -1;
+            const scrollHeight = editorElement.scrollHeight;
+            const heightChanged = scrollHeight !== lastScrollHeight;
+            lastScrollHeight = scrollHeight;
+            if (levelToApply === 2) {
                 syncButtons();
-            } else {
+            } else if (levelToApply === 1 || heightChanged) {
                 positionButtons();
             }
         });
@@ -147,24 +165,44 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
     const containsFootnoteStructure = (node: Node) => node instanceof Element
         && (node.matches(FOOTNOTE_STRUCTURE_SELECTOR) || !!node.querySelector(FOOTNOTE_STRUCTURE_SELECTOR));
     const observer = new MutationObserver((records) => {
-        const needsSync = records.some((record) => {
+        let level = 0;
+        for (const record of records) {
             if (record.type === "attributes") {
-                return true;
+                if ((record.target as Element).closest(FOOTNOTE_STRUCTURE_SELECTOR)) {
+                    level = 2;
+                    break;
+                }
+                continue;
             }
             if (record.type === "characterData") {
-                return !!record.target.parentElement?.closest(FOOTNOTE_STRUCTURE_SELECTOR);
+                const parent = record.target.parentElement;
+                const definition = parent?.closest<HTMLElement>(DEFINITION_SELECTOR);
+                if (definition) {
+                    level = Math.max(level, parent === definition ? 2 : 1);
+                } else if (parent?.closest(REFERENCE_SELECTOR)) {
+                    level = 2;
+                    break;
+                }
+                continue;
             }
-            if ((record.target as Element).closest?.(FOOTNOTE_STRUCTURE_SELECTOR)) {
-                return true;
+            const definition = (record.target as Element).closest?.<HTMLElement>(DEFINITION_SELECTOR);
+            if (definition) {
+                lastTextNodes.delete(definition);
+                level = 2;
+                break;
             }
-            return Array.from(record.addedNodes).some(containsFootnoteStructure)
-                || Array.from(record.removedNodes).some(containsFootnoteStructure);
-        });
-        queueUpdate(needsSync);
+            if ((record.target as Element).closest?.(REFERENCE_SELECTOR)
+                || Array.from(record.addedNodes).some(containsFootnoteStructure)
+                || Array.from(record.removedNodes).some(containsFootnoteStructure)) {
+                level = 2;
+                break;
+            }
+        }
+        queueUpdate(level);
     });
     observer.observe(editorElement, { childList: true, subtree: true, characterData: true, attributes: true,
         attributeFilter: ["data-marker", "data-footnotes-label"] });
-    const onLayoutChange = () => queueUpdate(false);
+    const onLayoutChange = () => queueUpdate(1);
     editorElement.addEventListener("scroll", onLayoutChange, { passive: true });
     window.addEventListener("resize", onLayoutChange);
     document.fonts?.addEventListener("loadingdone", onLayoutChange);
@@ -172,7 +210,7 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
     const styleObserver = new MutationObserver(onLayoutChange);
     styleObserver.observe(document.head, { childList: true, subtree: true, characterData: true,
         attributes: true, attributeFilter: ["href", "media"] });
-    queueUpdate(true);
+    queueUpdate(2);
 
     return {
         navigate(reference: HTMLElement, rawLabel: string) {
@@ -199,6 +237,7 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
                 button.remove();
             }
             buttons.clear();
+            lastTextNodes.clear();
             lastReferences.clear();
         },
     };

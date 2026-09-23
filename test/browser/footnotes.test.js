@@ -59,6 +59,23 @@ test('footnote click, return, and list indentation keep the reference usable',
           await page.waitForSelector(backSelector, { timeout: 1500 });
           assert.equal(await page.$eval(backSelector, el => el.textContent), '↩',
             'footnote definition always has an icon-only return action');
+          const ordinaryInputMeasurements = await page.evaluate(async rootSelector => {
+            const editor = document.querySelector(rootSelector);
+            const definition = editor.querySelector('[data-type="footnotes-def"], [data-type="footnotes-li"]');
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            let reads = 0;
+            const originalRect = definition.getBoundingClientRect.bind(definition);
+            definition.getBoundingClientRect = () => { reads++; return originalRect(); };
+            const paragraphText = editor.querySelector('p').firstChild;
+            const originalText = paragraphText.data;
+            paragraphText.data += 'x';
+            paragraphText.data = originalText;
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            definition.getBoundingClientRect = originalRect;
+            return reads;
+          }, root);
+          assert.equal(ordinaryInputMeasurements, 0,
+            'same-line ordinary text changes should not measure every footnote');
           await page.$eval(root, editor => { editor.scrollTop = editor.scrollHeight; });
           await page.waitForFunction(selector => !document.querySelector(selector).hidden, {}, backSelector);
           await page.click(backSelector);
