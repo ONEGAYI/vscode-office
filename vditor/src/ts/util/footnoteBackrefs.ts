@@ -155,9 +155,13 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
             const scrollHeight = editorElement.scrollHeight;
             const heightChanged = scrollHeight !== lastScrollHeight;
             lastScrollHeight = scrollHeight;
+            // 短文档被编辑区最小高度撑住：上方换行会移动脚注，但 scrollHeight 不变。
+            const shortEditor = scrollHeight <= editorElement.clientHeight
+                && editorElement.clientHeight <= window.innerHeight;
             if (levelToApply === 2) {
                 syncButtons();
-            } else if (levelToApply === 1 || heightChanged) {
+            } else if (levelToApply === 1 || heightChanged
+                || (levelToApply === 0 && shortEditor)) {
                 positionButtons();
             }
         });
@@ -178,6 +182,7 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
                 const parent = record.target.parentElement;
                 const definition = parent?.closest<HTMLElement>(DEFINITION_SELECTOR);
                 if (definition) {
+                    lastTextNodes.delete(definition);
                     level = Math.max(level, parent === definition ? 2 : 1);
                 } else if (parent?.closest(REFERENCE_SELECTOR)) {
                     level = 2;
@@ -196,6 +201,10 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
                 || Array.from(record.removedNodes).some(containsFootnoteStructure)) {
                 level = 2;
                 break;
+            }
+            if (Array.from(record.addedNodes).some((node) => node.nodeType === Node.ELEMENT_NODE)
+                || Array.from(record.removedNodes).some((node) => node.nodeType === Node.ELEMENT_NODE)) {
+                level = Math.max(level, 1);
             }
         }
         queueUpdate(level);

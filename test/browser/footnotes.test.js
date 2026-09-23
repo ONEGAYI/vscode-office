@@ -236,6 +236,51 @@ test('footnote click, return, and list indentation keep the reference usable',
           assert.ok(returnedToSecond, 'return arrow goes back to the most recently clicked reference');
           assert.equal(await page.$$eval(backSelector, els => els.length), 1,
             'one permanent arrow serves repeated references to the same footnote');
+
+          await page.evaluate(() => vditor.setValue('Short[^xx]\n\n[^xx]: Definition\n'));
+          await page.waitForSelector(backSelector);
+          const shortLayout = await page.evaluate(async ({ rootSelector, buttonSelector }) => {
+            const editor = document.querySelector(rootSelector);
+            editor.scrollTop = 0;
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const footnoteBlock = editor.querySelector('[data-type="footnotes-block"]');
+            const button = document.querySelector(buttonSelector);
+            const before = { definitionTop: footnoteBlock.getBoundingClientRect().top,
+              buttonTop: button.getBoundingClientRect().top, scrollHeight: editor.scrollHeight };
+            const extra = document.createElement('p');
+            extra.textContent = 'Added above footnote';
+            footnoteBlock.before(extra);
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const after = { definitionTop: footnoteBlock.getBoundingClientRect().top,
+              buttonTop: button.getBoundingClientRect().top, scrollHeight: editor.scrollHeight };
+            return { before, after };
+          }, { rootSelector: root, buttonSelector: backSelector });
+          assert.equal(shortLayout.after.scrollHeight, shortLayout.before.scrollHeight,
+            'short document must keep a fixed scrollHeight in this regression case');
+          assert.ok(shortLayout.after.definitionTop - shortLayout.before.definitionTop > 10,
+            'the added paragraph must move the footnote');
+          assert.ok(Math.abs((shortLayout.after.buttonTop - shortLayout.before.buttonTop)
+            - (shortLayout.after.definitionTop - shortLayout.before.definitionTop)) < 2,
+          'return arrow must follow a footnote moved by earlier block insertion');
+
+          const trailingTextGap = await page.evaluate(async ({ rootSelector, buttonSelector }) => {
+            const editor = document.querySelector(rootSelector);
+            const definition = editor.querySelector('[data-type="footnotes-def"], [data-type="footnotes-li"]');
+            const paragraph = definition.querySelector('p');
+            const tail = document.createTextNode(' ');
+            paragraph.appendChild(tail);
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            tail.data = ' more';
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const range = document.createRange();
+            range.setStart(tail, tail.data.length - 1);
+            range.setEnd(tail, tail.data.length);
+            return document.querySelector(buttonSelector).getBoundingClientRect().left
+              - range.getBoundingClientRect().right;
+          }, { rootSelector: root, buttonSelector: backSelector });
+          assert.ok(trailingTextGap >= 0 && trailingTextGap <= 12,
+            `return arrow must follow newly typed trailing text: gap ${trailingTextGap}`);
+
           await page.evaluate(() => vditor.setValue('Plain paragraph\n'));
           await page.waitForFunction(selector => document.querySelectorAll(selector).length === 0,
             {}, backSelector);
