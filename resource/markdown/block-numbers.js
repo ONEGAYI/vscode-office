@@ -80,6 +80,9 @@
   // 懒延续缩进行：空格或 Tab（编辑器 Tab 键即插入 \t，见 index.js tab:'\t'）
   var R_INDENT = /^[\t ]+\S/;
   var R_FENCE = /^(`{3,}|~{3,})/;
+  // Lute renders consecutive link reference definitions as separate top-level
+  // link-ref-defs-block elements, including when no blank line separates them.
+  var R_LINK_REF_DEF = /^ {0,3}\[(?!\^)[^\]]+\]:[\t ]*(?:<[^>]*>|\S+)/;
 
   function isBlockStart(s) {
     return R_HEADING.test(s) || R_LI.test(s) || R_OL.test(s)
@@ -124,7 +127,9 @@
       var tr = L[i].trim();
       if (tr === '') { i++; continue; }
       starts.push(i + 1);
-      if (R_HEADING.test(tr) || R_HR.test(tr)) {
+      if (R_LINK_REF_DEF.test(L[i])) {
+        i++;
+      } else if (R_HEADING.test(tr) || R_HR.test(tr)) {
         i++;
       } else if (R_FENCE.test(tr) || tr.indexOf('$$') === 0) {
         // fence / 数学块：单行自闭合（$$..$$ 同行闭合）只占一行，
@@ -224,6 +229,53 @@
     return false;
   }
 
+  function isLinkRefBlock(el) {
+    return el.tagName === 'DIV' && el.getAttribute('data-type') === 'link-ref-defs-block';
+  }
+
+  // Lute splits consecutive reference definitions on initial render, but may
+  // merge them into one link-ref-defs-block after editing. Pair runs as one
+  // logical group and number only the DOM blocks with an unambiguous start.
+  function pairBlockStarts(blocks, starts, source) {
+    var lines = String(source).split('\n');
+    var sourceGroups = [];
+    var domGroups = [];
+    for (var i = 0; i < starts.length; i++) {
+      var isRef = R_LINK_REF_DEF.test(lines[starts[i] - 1] || '');
+      var previous = sourceGroups[sourceGroups.length - 1];
+      if (isRef && previous && previous.ref) {
+        previous.items.push(starts[i]);
+      } else {
+        sourceGroups.push({ ref: isRef, items: [starts[i]] });
+      }
+    }
+    for (var j = 0; j < blocks.length; j++) {
+      var refBlock = isLinkRefBlock(blocks[j]);
+      var previousBlock = domGroups[domGroups.length - 1];
+      if (refBlock && previousBlock && previousBlock.ref) {
+        previousBlock.items.push(blocks[j]);
+      } else {
+        domGroups.push({ ref: refBlock, items: [blocks[j]] });
+      }
+    }
+    if (sourceGroups.length !== domGroups.length) return null;
+    var paired = [];
+    for (var g = 0; g < sourceGroups.length; g++) {
+      var sourceGroup = sourceGroups[g];
+      var domGroup = domGroups[g];
+      if (sourceGroup.ref !== domGroup.ref) return null;
+      if (!sourceGroup.ref && (sourceGroup.items.length !== 1 || domGroup.items.length !== 1)) return null;
+      // Equal runs have a one-to-one mapping. A merged run only has a
+      // trustworthy first line; later DOM blocks may contain several refs.
+      var count = sourceGroup.items.length === domGroup.items.length
+        ? sourceGroup.items.length : 1;
+      for (var n = 0; n < count; n++) {
+        paired.push({ block: domGroup.items[n], line: sourceGroup.items[n] });
+      }
+    }
+    return paired;
+  }
+
   /** 活动模式（ir/wysiwyg）的编辑面；sv 无块级编辑面，返回 null */
   function activeReset() {
     var v = currentEditor && currentEditor.vditor;
@@ -291,17 +343,20 @@
     }
 
     var starts = null;
+    var source = null;
     try {
       if (sourceText !== null) {
-        starts = computeBlockStarts(sourceText === undefined ? currentEditor.getValue() || '' : sourceText);
+        source = sourceText === undefined ? currentEditor.getValue() || '' : sourceText;
+        starts = computeBlockStarts(source);
       }
     } catch (e) {
       starts = null;
     }
 
-    // 映射安全防线：块数与起点数不一致说明扫描器与 Lute 解析分叉
-    // （html 块、footnote 聚合等），按序 1:1 映射会静默错号——全部不编号
-    if (!starts || starts.length !== blocks.length) {
+    // 映射安全防线：非引用定义块仍须逐块对应；若扫描器与 Lute 分叉
+    // （如 html 块、footnote 聚合），按序映射会静默错号——全部不编号。
+    var paired = starts && pairBlockStarts(blocks, starts, source);
+    if (!paired) {
       var staleAll = reset.querySelectorAll('[' + ATTR + ']');
       for (var s = 0; s < staleAll.length; s++) {
         staleAll[s].removeAttribute(ATTR);
@@ -313,33 +368,36 @@
     }
 
     var leadingParagraphs = [];
-    for (var k = 0; k < blocks.length; k++) {
-      var val = String(starts[k]);
-      if (blocks[k].getAttribute(ATTR) !== val) {
-        blocks[k].setAttribute(ATTR, val);
+    var numberedElements = new Set();
+    for (var k = 0; k < paired.length; k++) {
+      var block = paired[k].block;
+      numberedElements.add(block);
+      var val = String(paired[k].line);
+      if (block.getAttribute(ATTR) !== val) {
+        block.setAttribute(ATTR, val);
         // CSS 变量随属性同源：table 的行号锚在 th 上，attr() 无法跨元素，
         // 靠继承的 --lineno 取值（见 index.css）。值必须带引号——裸数字
         // token 会让 content: var(--lineno) 替换成 content: 23 而整条失效
-        blocks[k].style.setProperty('--lineno', '"' + val + '"');
+        block.style.setProperty('--lineno', '"' + val + '"');
       }
-      var leading = blocks[k].tagName === 'P' ? paragraphLeadingBreaks(blocks[k]) : 0;
+      var leading = block.tagName === 'P' ? paragraphLeadingBreaks(block) : 0;
       if (leading) {
-        var lineHeight = parseFloat(getComputedStyle(blocks[k]).lineHeight);
-        leadingParagraphs.push(blocks[k]);
+        var lineHeight = parseFloat(getComputedStyle(block).lineHeight);
+        leadingParagraphs.push(block);
         if (Number.isFinite(lineHeight)) {
-          blocks[k].style.setProperty('--lineno-offset', (leading * lineHeight) + 'px');
+          block.style.setProperty('--lineno-offset', (leading * lineHeight) + 'px');
         } else {
-          blocks[k].style.removeProperty('--lineno-offset');
+          block.style.removeProperty('--lineno-offset');
         }
       } else {
-        blocks[k].style.removeProperty('--lineno-offset');
+        block.style.removeProperty('--lineno-offset');
       }
     }
     watchParagraphSizes(leadingParagraphs);
     // 块退化为不可编号形态（如变空 p）时清掉过期行号
     var stale = reset.querySelectorAll('[' + ATTR + ']');
     for (var m = 0; m < stale.length; m++) {
-      if (blocks.indexOf(stale[m]) < 0) {
+      if (!numberedElements.has(stale[m])) {
         stale[m].removeAttribute(ATTR);
         stale[m].style.removeProperty('--lineno');
         stale[m].style.removeProperty('--lineno-offset');

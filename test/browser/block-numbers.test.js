@@ -19,7 +19,8 @@ const SOURCE = [
   '| `high_too_short` | 高电平 | 宽度不足 |',
   '| `low_too_short` | 低电平 | 宽度不足 |', '',
   '#### 缺陷判定依据', '', '',
-  '| A | B |', '| --- | --- |', '| x | y |', '', '后续段落',
+  '| A | B |', '| --- | --- |', '| x | y |', '', '后续段落', '',
+  '[one]: https://example.com/one', '[two]: https://example.com/two',
 ].join('\n');
 
 test('source line numbers in the complete markdown webview',
@@ -73,8 +74,14 @@ test('source line numbers in the complete markdown webview',
           const numbers = () => page.evaluate(() => Array.from(document.querySelectorAll(
             '.vditor-' + testEditor.getCurrentMode() + ' .vditor-reset > [data-lineno]'))
             .map(el => Number(el.getAttribute('data-lineno'))));
-          await page.waitForFunction(() => document.querySelectorAll('[data-lineno]').length >= 5);
-          assert.deepEqual(await numbers(), [1, 3, 9, 12, 16]);
+          const assertNumbers = async (firstSix, optionalLast) => {
+            const actual = await numbers();
+            assert.deepEqual(actual.slice(0, 6), firstSix);
+            assert.ok(actual.length === 6 || (actual.length === 7 && actual[6] === optionalLast),
+              JSON.stringify(actual));
+          };
+          await page.waitForFunction(() => document.querySelectorAll('[data-lineno]').length >= 7);
+          assert.deepEqual(await numbers(), [1, 3, 9, 12, 16, 18, 19]);
           if (process.env.LINE_NUMBER_SCREENSHOT_DIR) {
             await page.screenshot({ path: path.join(process.env.LINE_NUMBER_SCREENSHOT_DIR, `line-numbers-${mode}.png`) });
           }
@@ -94,7 +101,7 @@ test('source line numbers in the complete markdown webview',
           const input = await page.evaluate(() => window.hostMessages.filter(item => item.type === 'save').at(-1).content);
           const applied = preserveTableFormat(SOURCE, input);
           await receive('lineNumberSource', { input, content: applied });
-          assert.deepEqual(await numbers(), [1, 3, 9, 12, 16]);
+          await assertNumbers([1, 3, 9, 12, 16, 18], 19);
 
           await page.keyboard.down('Control');
           await page.keyboard.press('s');
@@ -102,13 +109,13 @@ test('source line numbers in the complete markdown webview',
           await page.waitForFunction(() => window.hostMessages.some(item => item.type === 'doSave'));
           const manualInput = await page.evaluate(() => window.hostMessages.filter(item => item.type === 'doSave').at(-1).content);
           await receive('lineNumberSource', { input: manualInput, content: preserveTableFormat(applied, manualInput) });
-          assert.deepEqual(await numbers(), [1, 3, 9, 12, 16]);
+          await assertNumbers([1, 3, 9, 12, 16, 18], 19);
 
           await page.evaluate(mode => testEditor.switchEditMode(mode === 'ir' ? 'wysiwyg' : 'ir'), mode);
           await page.waitForFunction(() => document.querySelector('.vditor-' + testEditor.getCurrentMode() + ' .vditor-reset > [data-lineno]'));
-          assert.deepEqual(await numbers(), [1, 3, 9, 12, 16]);
+          await assertNumbers([1, 3, 9, 12, 16, 18], 19);
           await receive('update', '\n\n' + SOURCE);
-          assert.deepEqual(await numbers(), [3, 5, 11, 14, 18]);
+          await assertNumbers([3, 5, 11, 14, 18, 20], 21);
           assert.deepEqual(errors, []);
         } finally { await page.close(); }
       });
