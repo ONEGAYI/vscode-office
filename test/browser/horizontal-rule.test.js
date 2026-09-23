@@ -156,6 +156,17 @@ test('--- stays editable on its line and renders as a rule when focus leaves',
             paragraphs => paragraphs.some(p => p.textContent === '---')),
           `${mode}: an exact dash rule remains editable in a mixed document`);
 
+          for (const source of [
+            '- a\n* b\n\nHeading\n---\n\n---\n\nend',
+            '- a\n* b\n\n~~~md\n---\n~~~\n\n---\n\nend',
+          ]) {
+            await page.evaluate(value => setTestMarkdown(value), source);
+            await page.click(`.vditor-${mode} .vditor-reset > hr`);
+            assert.ok(await page.$$eval(`.vditor-${mode} .vditor-reset > p`,
+              paragraphs => paragraphs.some(p => p.textContent === '---')),
+            `${mode}: only the actual rule is paired in ${JSON.stringify(source)}`);
+          }
+
           await page.evaluate(() => setTestMarkdown('before\n\n***\n\nafter'));
           await page.evaluate(() => HorizontalRuleLive.setSource(null));
           await page.click(`.vditor-${mode} .vditor-reset > hr`);
@@ -173,6 +184,24 @@ test('--- stays editable on its line and renders as a rule when focus leaves',
           await page.click(`.vditor-${otherMode} .vditor-reset > hr`);
           assert.equal(await page.$$eval(`.vditor-${otherMode} .vditor-reset > hr`, rules => rules.length),
             1, `${mode}: mode switch must preserve non-dash rule provenance`);
+          await page.evaluate(nextMode => {
+            vditor.switchEditMode(nextMode);
+            document.dispatchEvent(new Event('selectionchange'));
+          }, mode);
+
+          await page.evaluate(() => setTestMarkdown('before\n\n***\n\nmiddle\n\n---\n\nafter'));
+          await page.evaluate(() => {
+            HorizontalRuleLive.setSource(null);
+            HorizontalRuleLive.setSource(vditor.getValue());
+          });
+          await page.click(`.vditor-${mode} .vditor-reset > hr:last-of-type`);
+          await page.evaluate(nextMode => {
+            vditor.switchEditMode(nextMode);
+            document.dispatchEvent(new Event('selectionchange'));
+          }, otherMode);
+          await page.click(`.vditor-${otherMode} .vditor-reset > hr:first-of-type`);
+          assert.equal(await page.$$eval(`.vditor-${otherMode} .vditor-reset > hr`, rules => rules.length),
+            2, `${mode}: an active dash rule must not erase another rule's provenance on mode switch`);
           await page.evaluate(nextMode => {
             vditor.switchEditMode(nextMode);
             document.dispatchEvent(new Event('selectionchange'));

@@ -25,8 +25,8 @@
     return paragraph && paragraph.parentElement === root ? paragraph : null;
   }
 
-  function isRuleParagraph(paragraph) {
-    if (paragraph.tagName !== 'P' || paragraph.parentElement !== editorElement()) return false;
+  function isRuleParagraph(paragraph, root) {
+    if (paragraph.tagName !== 'P' || paragraph.parentElement !== (root || editorElement())) return false;
     // A soft break or inline markup must not be mistaken for a standalone rule.
     if (Array.from(paragraph.children).some(function (child) { return child.tagName !== 'WBR'; })) return false;
     return paragraph.textContent.replace(/\u200b/g, '') === '---';
@@ -43,6 +43,43 @@
     return element.tagName === 'DIV' && !!element.getAttribute('data-type');
   }
 
+  function sourceRuleMarkers(lines) {
+    var markers = [];
+    var paragraph = false;
+    var fence = null;
+    var start = 0;
+    if (lines[0]?.trim() === '---') {
+      var close = lines.findIndex(function (line, index) { return index > 0 && line.trim() === '---'; });
+      if (close > 0) start = close + 1; // YAML front matter, not two rules.
+    }
+    for (var i = start; i < lines.length; i++) {
+      var line = lines[i];
+      var trimmed = line.trim();
+      if (fence) {
+        if (new RegExp('^' + fence.char + '{' + fence.length + ',}$').test(trimmed)) fence = null;
+        continue;
+      }
+      if (!trimmed) { paragraph = false; continue; }
+      var opening = line.match(/^ {0,3}(`{3,}|~{3,})/);
+      if (opening) {
+        fence = { char: opening[1][0], length: opening[1].length };
+        paragraph = false;
+        continue;
+      }
+      var marker = !/^(?: {4}|\t)/.test(line)
+        && /^(?:-{3,}|\*{3,}|_{3,})$/.test(trimmed.replace(/[ \t]/g, ''));
+      if (marker) {
+        // A dashed underline immediately after paragraph text is a Setext heading.
+        if (!(paragraph && /^-{3,}$/.test(trimmed))) markers.push(trimmed);
+        paragraph = false;
+        continue;
+      }
+      paragraph = !/^(?:#{1,6}(?:[ \t]|$)|[-*+][ \t]|[0-9]+[.)][ \t]|>|\||<|\$\$)/.test(trimmed)
+        && !/^(?: {4}|\t)/.test(line);
+    }
+    return markers;
+  }
+
   function cacheCurrentRules(root) {
     var rules = Array.from(root.querySelectorAll(':scope > hr[data-block]'));
     if (rules.every(function (rule) { return editableRules.has(rule); })) return;
@@ -53,10 +90,7 @@
     var blockIndex = new Map(blocks.map(function (block, index) { return [block, index]; }));
     // Lists can split into more DOM blocks than source block starts. Pair by
     // rule order only when every source marker has a top-level DOM counterpart.
-    var markers = lines.filter(function (line) {
-      if (/^(?: {4}|\t)/.test(line)) return false;
-      return /^(?:-{3,}|\*{3,}|_{3,})$/.test(line.trim().replace(/[ \t]/g, ''));
-    });
+    var markers = sourceRuleMarkers(lines);
     rules.forEach(function (rule, ruleIndex) {
       if (editableRules.has(rule)) return;
       var marker = null;
@@ -76,6 +110,12 @@
   function isEditableRule(root, rule) {
     if (!editableRules.has(rule)) cacheCurrentRules(root);
     return editableRules.get(rule) === true;
+  }
+
+  function logicalRules(root) {
+    return Array.from(root.children).filter(function (element) {
+      return element.matches('hr[data-block]') || isRuleParagraph(element, root);
+    });
   }
 
   function revealRule(root, rule, atStart) {
@@ -115,11 +155,13 @@
     if (!root) return;
     if (root !== trackedRoot) {
       if (trackedRoot) {
-        var oldRules = Array.from(trackedRoot.querySelectorAll(':scope > hr[data-block]'));
-        var newRules = Array.from(root.querySelectorAll(':scope > hr[data-block]'));
+        var oldRules = logicalRules(trackedRoot);
+        var newRules = logicalRules(root);
         if (oldRules.length === newRules.length) {
           oldRules.forEach(function (oldRule, index) {
-            if (editableRules.has(oldRule)) editableRules.set(newRules[index], editableRules.get(oldRule));
+            if (newRules[index].tagName !== 'HR') return;
+            if (oldRule.tagName === 'P') editableRules.set(newRules[index], true);
+            else if (editableRules.has(oldRule)) editableRules.set(newRules[index], editableRules.get(oldRule));
           });
         }
       }
