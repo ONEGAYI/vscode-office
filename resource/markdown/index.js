@@ -28,6 +28,7 @@ handler.on("open", async (md) => {
   const submitMarkdown = (event, value) => {
     pendingLineNumberInput = restoreWorkspaceBaseUrls(value, workspaceBaseUrl);
     BlockLineNumbers.setSource(null);
+    HorizontalRuleLive.setSource(null);
     handler.emit(event, pendingLineNumberInput);
   };
   const saveMarkdown = () => submitMarkdown('doSave', getMarkdownValue());
@@ -148,7 +149,9 @@ handler.on("open", async (md) => {
     after() {
       const { viewerSettings } = md;
       ListMarkerLive.install(editor);
-      HorizontalRuleLive.install(editor);
+      HorizontalRuleLive.install(editor, {
+        sourceText: pendingLineNumberInput === null ? content : null,
+      });
       document.body.classList.toggle('vmd-heading-badges-off', markdownHeadingBadges === false);
       BlockLineNumbers.install(editor, {
         enabled: markdownBlockLineNumbers !== false,
@@ -159,6 +162,7 @@ handler.on("open", async (md) => {
         if (pendingLineNumberInput === null || reply.input !== pendingLineNumberInput) return;
         if (typeof reply.content === 'string') pendingLineNumberInput = null;
         BlockLineNumbers.setSource(reply.content);
+        HorizontalRuleLive.setSource(reply.content);
       });
       observeWorkspaceAbsoluteImages(document.getElementById('vditor'), workspaceBaseUrl);
       if (viewerSettings?.enabled) {
@@ -205,10 +209,12 @@ handler.on("open", async (md) => {
         pendingLineNumberInput = null;
         if (getMarkdownValue() === content) {
           BlockLineNumbers.setSource(content);
+          HorizontalRuleLive.setSource(content);
           return;
         }
         editor.setValue(content);
         BlockLineNumbers.setSource(content);
+        HorizontalRuleLive.setSource(content);
         editor.markSaved();
       })
       handler.on("insertImageMarkdown", (markdown) => {

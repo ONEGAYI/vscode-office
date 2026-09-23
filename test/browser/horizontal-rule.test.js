@@ -59,8 +59,12 @@ test('--- stays editable on its line and renders as a rule when focus leaves',
           }
           await page.evaluate(() => {
             ListMarkerLive.install(vditor);
-            HorizontalRuleLive.install(vditor);
+            HorizontalRuleLive.install(vditor, { sourceText: 'before' });
             BlockLineNumbers.install(vditor, { enabled: true, sourceText: 'before' });
+            window.setTestMarkdown = source => {
+              vditor.setValue(source);
+              HorizontalRuleLive.setSource(source);
+            };
           });
           await page.evaluate(mode => {
             const root = document.querySelector(`.vditor-${mode} .vditor-reset`);
@@ -106,7 +110,7 @@ test('--- stays editable on its line and renders as a rule when focus leaves',
           await page.click('#outside');
           await page.waitForSelector(`.vditor-${mode} .vditor-reset > hr`, { timeout: 1000 });
 
-          await page.evaluate(() => vditor.setValue('before\n\n---\n\nafter'));
+          await page.evaluate(() => setTestMarkdown('before\n\n---\n\nafter'));
           await page.click(`.vditor-${mode} .vditor-reset > hr`);
           assert.equal(await page.$eval(`.vditor-${mode} .vditor-reset > p:nth-last-of-type(2)`,
             p => p.textContent), '---');
@@ -114,7 +118,42 @@ test('--- stays editable on its line and renders as a rule when focus leaves',
           await page.waitForSelector(`.vditor-${mode} .vditor-reset > hr`, { timeout: 1000 });
           assert.equal(await page.evaluate(() => vditor.getValue()), 'before\n\n---\n\nafter\n');
 
-          await page.evaluate(() => vditor.setValue('1\n\n---\n\n2'));
+          const selectionLatency = await page.evaluate(mode => {
+            const root = document.querySelector(`.vditor-${mode} .vditor-reset`);
+            root.innerHTML = '<p data-block="0">x</p>'.repeat(5000);
+            root.focus();
+            const range = document.createRange();
+            range.setStart(root.firstElementChild.firstChild, 1);
+            range.collapse(true);
+            getSelection().removeAllRanges();
+            getSelection().addRange(range);
+            const started = performance.now();
+            for (let i = 0; i < 20; i++) {
+              document.dispatchEvent(new Event('selectionchange'));
+            }
+            return performance.now() - started;
+          }, mode);
+          assert.ok(selectionLatency < 150,
+            `${mode}: 20 selection changes took ${selectionLatency.toFixed(1)} ms in a 5000-paragraph document`);
+
+          for (const marker of ['***', '___', '- - -', '----']) {
+            await page.evaluate(source => setTestMarkdown(source), `before\n\n${marker}\n\nafter`);
+            await page.click(`.vditor-${mode} .vditor-reset > hr`);
+            assert.deepEqual(await page.evaluate(mode => ({
+              hrCount: document.querySelectorAll(`.vditor-${mode} .vditor-reset > hr`).length,
+              rawTripleDash: Array.from(document.querySelectorAll(`.vditor-${mode} .vditor-reset > p`))
+                .some(p => p.textContent === '---'),
+            }), mode), { hrCount: 1, rawTripleDash: false }, `${mode}: ${marker}`);
+          }
+          await page.evaluate(() => setTestMarkdown('before\n\n***\n\nmiddle\n\n---\n\nafter'));
+          await page.click(`.vditor-${mode} .vditor-reset > hr:first-of-type`);
+          assert.equal(await page.$$eval(`.vditor-${mode} .vditor-reset > hr`, rules => rules.length), 2);
+          await page.click(`.vditor-${mode} .vditor-reset > hr:last-of-type`);
+          assert.equal(await page.$$eval(`.vditor-${mode} .vditor-reset > hr`, rules => rules.length), 1);
+          assert.ok(await page.$$eval(`.vditor-${mode} .vditor-reset > p`,
+            paragraphs => paragraphs.some(p => p.textContent === '---')));
+
+          await page.evaluate(() => setTestMarkdown('1\n\n---\n\n2'));
           const ruleBox = await page.$eval(`.vditor-${mode} .vditor-reset > hr`, element => {
             const rect = element.getBoundingClientRect();
             return { x: rect.x, y: rect.y, height: rect.height };
@@ -154,7 +193,7 @@ test('--- stays editable on its line and renders as a rule when focus leaves',
           await page.click('#outside');
           await page.waitForSelector(`.vditor-${mode} .vditor-reset > hr`, { timeout: 1000 });
 
-          await page.evaluate(() => vditor.setValue('before\n\n---\n\nafter'));
+          await page.evaluate(() => setTestMarkdown('before\n\n---\n\nafter'));
 
           await page.click(`.vditor-${mode} .vditor-reset > hr`);
           await page.evaluate(mode => {
@@ -182,7 +221,7 @@ test('--- stays editable on its line and renders as a rule when focus leaves',
             hrCount: document.querySelectorAll(`.vditor-${mode} .vditor-reset > hr`).length,
           }), mode), { markdown: 'before\n\nplain\n\nafter\n', hrCount: 0 });
 
-          await page.evaluate(() => vditor.setValue('before\n\nafter'));
+          await page.evaluate(() => setTestMarkdown('before\n\nafter'));
           await page.evaluate(mode => {
             const root = document.querySelector(`.vditor-${mode} .vditor-reset`);
             const before = root.querySelector('p');
