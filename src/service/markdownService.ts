@@ -2,13 +2,13 @@ import { adjustImgPath } from "@/common/fileUtil";
 import { Output } from "@/common/Output";
 import { spawn } from 'child_process';
 import chromeFinder from 'chrome-finder';
-import { fileTypeFromFile } from 'file-type';
-import { copyFileSync, existsSync, lstatSync, mkdirSync, renameSync } from 'fs';
+import { closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readSync, renameSync } from 'fs';
 import { homedir } from 'os';
 import path, { dirname, extname, isAbsolute, join, parse } from 'path';
 import * as vscode from 'vscode';
 import { Holder } from './markdown/holder';
 import { convertMd } from "./markdown/markdown-pdf";
+import { detectClipboardImageExtension } from './markdown/imageSignature';
 import { parseDiffLabel, planSwitchEditor, resolveUnknownDiffSides } from './markdown/switchEditorPlanner';
 import { openMarkdownDiff, openTextDiff } from './markdown/markdownTextDiff';
 import { Global, i18n } from "@/common/global";
@@ -163,7 +163,16 @@ export class MarkdownService {
 
     public static async imgExtGuide(absPath: string, relPath: string) {
         const oldExt = extname(absPath)
-        const { ext = "png" } = (await fileTypeFromFile(absPath)) ?? {};
+        const header = Buffer.alloc(64);
+        const fd = openSync(absPath, 'r');
+        let readLength: number;
+        try {
+            readLength = readSync(fd, header, 0, header.length, 0);
+        } finally {
+            closeSync(fd);
+        }
+        const ext = detectClipboardImageExtension(header.subarray(0, readLength))
+            ?? (oldExt.replace(/^\./, '') || 'png');
         if (oldExt != `.${ext}`) {
             relPath = relPath.replace(oldExt, `.${ext}`)
             renameSync(absPath, absPath.replace(oldExt, `.${ext}`))

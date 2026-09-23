@@ -2,6 +2,7 @@ const fs = require("fs")
 const os = require("os")
 const path = require("path")
 const { pathToFileURL } = require("url")
+const { Worker } = require('worker_threads')
 const { createOutline } = require("./outline")
 const isDev = process.argv.indexOf('--type=extensionHost') >= 0;
 
@@ -13,10 +14,39 @@ export async function exportHtml(exportFilePath, data) {
 export async function exportDocx(exportFilePath, data, config) {
     console.log("[pretty-md-pdf] Exported to file: " + exportFilePath)
     const html = await replaceDynamicContentWithImages(data, config, exportFilePath)
-    const htmlToDocx = require("vscode-html-to-docx");
-    const exportTask = await htmlToDocx(html, '', {}, '');
-    const buffer = Buffer.from(await exportTask.arrayBuffer());
+    const buffer = await convertDocxInWorker(html)
     fs.writeFileSync(exportFilePath, buffer)
+}
+
+function convertDocxInWorker(html) {
+    const workerPath = path.resolve(__dirname, '..', 'resource', 'markdown', 'docx-convert-worker.cjs')
+    const converterPath = require.resolve('vscode-html-to-docx')
+    return new Promise((resolve, reject) => {
+        const worker = new Worker(workerPath, {
+            workerData: { html, converterPath },
+            resourceLimits: { maxOldGenerationSizeMb: 256 },
+        })
+        let settled = false
+        const finish = (error, bytes) => {
+            if (settled) return
+            settled = true
+            clearTimeout(timer)
+            if (error) {
+                void worker.terminate()
+                reject(error)
+            } else {
+                resolve(Buffer.from(bytes))
+            }
+        }
+        const timer = setTimeout(() => finish(new Error('DOCX conversion exceeded the 30 second limit')), 30000)
+        worker.on('message', ({ bytes, error }) => {
+            finish(error ? new Error(error) : null, bytes)
+        })
+        worker.on('error', error => finish(error))
+        worker.on('exit', code => {
+            if (!settled) finish(new Error(`DOCX conversion worker exited with code ${code}`))
+        })
+    })
 }
 
 /*

@@ -159,17 +159,6 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         }
     }
 
-    private getFolders(): vscode.Uri[] {
-        if (vscode.env.uiKind === vscode.UIKind.Web) {
-            return [];
-        }
-        const data = [];
-        for (let i = 65; i <= 90; i++) {
-            data.push(vscode.Uri.file(`${String.fromCharCode(i)}:/`))
-        }
-        return data;
-    }
-
     private getWorkspaceUriByFileUtil(uri: vscode.Uri): vscode.Uri | undefined {
         const workspacePath = getWorkspacePath(uri);
         if (!workspacePath) {
@@ -189,8 +178,6 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 ...getExtensionResourceRoots(this.context),
                 folderPath,
                 ...(vscode.workspace.workspaceFolders?.map(folder => folder.uri) ?? []),
-                vscode.Uri.file("/"),
-                ...this.getFolders(),
             ],
         }
         const handler = Handler.bind(webviewPanel, uri);

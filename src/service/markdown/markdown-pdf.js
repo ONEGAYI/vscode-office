@@ -1,6 +1,7 @@
 const fs = require("fs")
 const path = require("path")
 const url = require("url")
+const crypto = require("crypto")
 const URI = require("vscode").Uri
 const markdownIt = require("markdown-it")
 const markdownItCheckbox = require("markdown-it-checkbox")
@@ -14,7 +15,59 @@ const markdownItMark = require("markdown-it-mark")
 const markdownItObsidian = require("./ext/markdown-it-obsidian")
 const markdownItFrontMatterExport = require("./ext/markdown-it-front-matter")
 const { parse } = require("node-html-parser")
+const sanitizeHtml = require("sanitize-html")
 const { exportByType } = require('./html-export')
+
+const exportHtmlTags = [
+  ...sanitizeHtml.defaults.allowedTags,
+  'img', 'input', 'label', 'div', 'span', 'math', 'semantics', 'mrow', 'mi', 'mo', 'mn',
+  'msup', 'msub', 'mfrac', 'msqrt', 'mroot', 'mtext', 'mspace', 'annotation',
+  'munderover', 'mover', 'munder', 'mtable', 'mtr', 'mtd', 'mpadded', 'menclose'
+]
+const cssValue = /^(?:[-+\w\s.#%,()]+|[-+]?\d*\.?\d+(?:em|ex|px|pt|rem|%)?)$/i
+const exportHtmlPolicy = {
+  allowedTags: exportHtmlTags,
+  allowedAttributes: {
+    '*': ['class', 'id', 'title', 'style', 'aria-hidden', 'role'],
+    a: ['href', 'name', 'title', 'class', 'id'],
+    img: ['src', 'alt', 'title', 'width', 'height', 'class', 'style'],
+    input: ['type', 'checked', 'disabled', 'class', 'id'],
+    label: ['for', 'class'],
+    th: ['colspan', 'rowspan', 'align', 'style'],
+    td: ['colspan', 'rowspan', 'align', 'style'],
+    ol: ['start', 'type', 'class']
+  },
+  allowedSchemes: ['http', 'https', 'mailto'],
+  allowedSchemesByTag: { img: ['http', 'https', 'file', 'data'] },
+  transformTags: {
+    input: (_tagName, attributes) => attributes.type?.toLowerCase() === 'checkbox'
+      ? {
+        tagName: 'input',
+        attribs: {
+          type: 'checkbox', disabled: 'disabled',
+          ...(attributes.checked !== undefined ? { checked: 'checked' } : {}),
+          ...(attributes.class ? { class: attributes.class } : {}),
+          ...(attributes.id ? { id: attributes.id } : {})
+        }
+      }
+      : { tagName: 'span', attribs: {} }
+  },
+  allowedStyles: {
+    '*': {
+      ...Object.fromEntries([
+      'color', 'background-color', 'font-family', 'font-size', 'font-weight',
+      'font-style', 'text-align', 'vertical-align', 'white-space',
+      'width', 'min-width', 'max-width', 'height', 'min-height', 'max-height',
+      'top', 'left', 'right', 'bottom', 'margin', 'margin-top', 'margin-left',
+      'margin-right', 'margin-bottom', 'padding', 'padding-top', 'padding-left',
+      'padding-right', 'padding-bottom', 'border', 'border-top', 'border-right',
+      'border-bottom', 'border-left', 'display', 'position', 'line-height',
+      'opacity', 'transform'
+      ].map(property => [property, [cssValue]])),
+      'font-family': [/^[-\w\s'",]+$/]
+    }
+  }
+}
 
 async function convertMarkdown(inputMarkdownFile, config) {
 
@@ -22,7 +75,8 @@ async function convertMarkdown(inputMarkdownFile, config) {
   const uri = URI.file(inputMarkdownFile)
   const text = fs.readFileSync(inputMarkdownFile).toString()
   const content = convertMarkdownToHtml(inputMarkdownFile, type, text, config)
-  const html = mergeHtml(content, uri, type)
+  const nonce = crypto.randomBytes(16).toString('base64')
+  const html = mergeHtml(content, uri, type, nonce)
 
   // insert mermaid script
   let outputHtml = html
@@ -30,8 +84,8 @@ async function convertMarkdown(inputMarkdownFile, config) {
   const containsMermaid = root.querySelector('.mermaid') != null;
   if (containsMermaid) {
     const mermaidScript = `
-    <script src="${getMermaidScriptSrc(type)}"></script>
-    <script>mermaid.initialize({startOnLoad:true});</script>
+    <script nonce="${nonce}" src="${getMermaidScriptSrc(type)}"></script>
+    <script nonce="${nonce}">mermaid.initialize({startOnLoad:true});</script>
     `;
     outputHtml = appendHtmlToBody(outputHtml, mermaidScript);
   }
@@ -65,7 +119,7 @@ function addTocToContent(text, config) {
 /*
  * convert markdown to html (markdown-it)
  */
-function convertMarkdownToHtml(filename, type, text, config) {
+export function convertMarkdownToHtml(filename, type, text, config) {
   if (type == 'pdf') text = addTocToContent(text, config)
   let md = {}
 
@@ -138,7 +192,7 @@ function convertMarkdownToHtml(filename, type, text, config) {
       .use(markdownItPlantuml)
       .use(markdownItMermaid)
 
-    return md.render(text)
+    return sanitizeHtml(md.render(text), exportHtmlPolicy)
 
   } catch (error) {
     showErrorMessage("convertMarkdownToHtml()", error)
@@ -149,13 +203,15 @@ function convertMarkdownToHtml(filename, type, text, config) {
 /*
  * make html
  */
-function mergeHtml(content, uri, type) {
+function mergeHtml(content, uri, type, nonce) {
   try {
     const mustache = require("mustache")
     const title = path.basename(uri.fsPath)
     const style = readStyles(type)
     const templatePath = path.join(__dirname, "template", "template.html")
-    return mustache.render(readFile(templatePath), { title, style, content })
+    const html = mustache.render(readFile(templatePath), { title, style, content })
+    const policy = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline' file: https:; img-src file: data: https: http:; font-src file: data: https:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'`
+    return html.replace(/<head>/i, `<head><meta http-equiv="Content-Security-Policy" content="${policy}">`)
   } catch (error) {
     showErrorMessage("makeHtml()", error)
   }

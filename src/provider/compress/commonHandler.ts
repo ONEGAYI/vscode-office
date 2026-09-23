@@ -4,6 +4,7 @@ import { Handler } from "@/common/handler";
 import { isUriReadOnly } from '@/common/fileReadOnly';
 import { Uri, workspace } from 'vscode';
 import { emitFileOfficeOpen, emitVirtualOfficeOpen, isVirtualUri } from '@/provider/handlers/officeContent';
+import { isOpenExternalLinkAllowed } from '@/service/markdown/webviewInputValidation';
 
 const fileSaveTimes: Record<string, number> = {};
 const INTERNAL_SAVE_CHANGE_WINDOW_MS = 1500;
@@ -108,8 +109,9 @@ export function handleCommonEvent(uri: Uri, handler: Handler, options?: { skipOp
             );
         })
         .on('openExternal', (url: string) => {
-            if (url) {
-                vscode.env.openExternal(vscode.Uri.parse(url));
+            const trimmed = typeof url === 'string' ? url.trim() : '';
+            if (trimmed && isOpenExternalLinkAllowed(trimmed)) {
+                vscode.env.openExternal(vscode.Uri.parse(trimmed));
             }
         })
         .on('dispose', () => {

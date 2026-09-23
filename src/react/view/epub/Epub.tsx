@@ -31,6 +31,7 @@ import {
     THEME_OPTIONS,
 } from './epubConfig';
 import './Epub.css';
+import EpubDescription from './EpubDescription';
 
 type SidebarTab = 'toc' | 'search' | 'info' | 'settings';
 
@@ -588,7 +589,7 @@ export default function Epub() {
                                         ) : null}
                                         {meta.author ? <div className="author">{meta.author}</div> : null}
                                         {meta.description ? (
-                                            <div className="description" dangerouslySetInnerHTML={{ __html: meta.description }} />
+                                            <EpubDescription description={meta.description} />
                                         ) : null}
                                     </>
                                 ) : null}

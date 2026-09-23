@@ -1,4 +1,4 @@
-import {isSpecialBlock, renderCodeBlocks, setupLazyCodeMirrorObserver, syncMathBlocksDisplayMode} from "../codeBlock/codeMirrorManager";
+import {destroyAllCodeMirrors, isSpecialBlock, renderCodeBlocks, setupLazyCodeMirrorObserver, syncMathBlocksDisplayMode} from "../codeBlock/codeMirrorManager";
 import {log} from "../util/log";
 import {processCodeRender} from "../util/processCode";
 import {renderTocNow} from "../util/toc";
@@ -22,6 +22,7 @@ export const renderDomByMd = (vditor: IVditor, md: string, options = {
     const editorElement = vditor.wysiwyg.element;
     const html = vditor.lute.Md2VditorDOM(md);
     log("Md2VditorDOM", html, "result", vditor.options.debugger);
+    destroyAllCodeMirrors(vditor);
     editorElement.innerHTML = html;
 
     const isNearViewport = (element: HTMLElement) => {

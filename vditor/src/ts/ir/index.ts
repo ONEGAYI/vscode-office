@@ -15,6 +15,7 @@ import { insertPastedCode } from "../util/processCode";
 import { hasClosestBlock, hasClosestByClassName } from "../util/hasClosest";
 import { isDeleteInput, recordHistoryChange } from "../util/instantHistory";
 import { flushBufferedHistory, trackHistoryInputFromEvent } from "../util/historyInputBuffer";
+import { canUsePlainTextFastPath } from "../util/plainTextFastPath";
 import {
     getEditorRange, preventImpreciseLineStartClick, setRangeByWbr,
     setSelectionFocus,
@@ -191,6 +192,14 @@ class IR {
             let shouldFlushHistory = false;
             if (!recordInstantDelete) {
                 shouldFlushHistory = trackHistoryInputFromEvent(vditor, event);
+            }
+            if (canUsePlainTextFastPath(vditor, event)) {
+                if (shouldFlushHistory) {
+                    flushBufferedHistory(vditor);
+                } else {
+                    processAfterRender(vditor);
+                }
+                return;
             }
             input(vditor, getSelection().getRangeAt(0).cloneRange(), false, event);
             if (recordInstantDelete) {
