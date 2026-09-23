@@ -145,6 +145,38 @@ test('--- stays editable on its line and renders as a rule when focus leaves',
                 .some(p => p.textContent === '---'),
             }), mode), { hrCount: 1, rawTripleDash: false }, `${mode}: ${marker}`);
           }
+          await page.evaluate(() => setTestMarkdown('- a\n* b\n\n***\n\nend'));
+          await page.click(`.vditor-${mode} .vditor-reset > hr`);
+          assert.equal(await page.$$eval(`.vditor-${mode} .vditor-reset > hr`, rules => rules.length),
+            1, `${mode}: mixed lists must preserve a non-dash rule`);
+
+          await page.evaluate(() => setTestMarkdown('- a\n* b\n\n---\n\nend'));
+          await page.click(`.vditor-${mode} .vditor-reset > hr`);
+          assert.ok(await page.$$eval(`.vditor-${mode} .vditor-reset > p`,
+            paragraphs => paragraphs.some(p => p.textContent === '---')),
+          `${mode}: an exact dash rule remains editable in a mixed document`);
+
+          await page.evaluate(() => setTestMarkdown('before\n\n***\n\nafter'));
+          await page.evaluate(() => HorizontalRuleLive.setSource(null));
+          await page.click(`.vditor-${mode} .vditor-reset > hr`);
+          assert.equal(await page.$$eval(`.vditor-${mode} .vditor-reset > hr`, rules => rules.length),
+            1, `${mode}: pending host acknowledgment must preserve non-dash rules`);
+          await page.evaluate(() => HorizontalRuleLive.setSource(vditor.getValue()));
+          await page.click(`.vditor-${mode} .vditor-reset > hr`);
+          assert.equal(await page.$$eval(`.vditor-${mode} .vditor-reset > hr`, rules => rules.length),
+            1, `${mode}: normalized host acknowledgment must preserve non-dash rules`);
+          const otherMode = mode === 'ir' ? 'wysiwyg' : 'ir';
+          await page.evaluate(nextMode => {
+            vditor.switchEditMode(nextMode);
+            document.dispatchEvent(new Event('selectionchange'));
+          }, otherMode);
+          await page.click(`.vditor-${otherMode} .vditor-reset > hr`);
+          assert.equal(await page.$$eval(`.vditor-${otherMode} .vditor-reset > hr`, rules => rules.length),
+            1, `${mode}: mode switch must preserve non-dash rule provenance`);
+          await page.evaluate(nextMode => {
+            vditor.switchEditMode(nextMode);
+            document.dispatchEvent(new Event('selectionchange'));
+          }, mode);
           await page.evaluate(() => setTestMarkdown('before\n\n***\n\nmiddle\n\n---\n\nafter'));
           await page.click(`.vditor-${mode} .vditor-reset > hr:first-of-type`);
           assert.equal(await page.$$eval(`.vditor-${mode} .vditor-reset > hr`, rules => rules.length), 2);

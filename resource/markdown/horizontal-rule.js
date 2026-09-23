@@ -6,6 +6,7 @@
   var trackedRoot = null;
   var pendingParagraphs = new Set();
   var sourceText = null;
+  var sourcePending = false;
   var editableRules = new WeakMap();
 
   function editorElement() {
@@ -42,23 +43,39 @@
     return element.tagName === 'DIV' && !!element.getAttribute('data-type');
   }
 
-  function isEditableRule(root, rule) {
-    if (editableRules.has(rule)) return editableRules.get(rule);
-    var editable = true;
-    if (typeof sourceText === 'string' && window.BlockLineNumbers?.computeBlockStarts) {
-      var starts = window.BlockLineNumbers.computeBlockStarts(sourceText);
-      var blocks = Array.from(root.children).filter(isCountableBlock);
-      var index = blocks.indexOf(rule);
-      if (index >= 0 && blocks.length === starts.length) {
-        var sourceLine = sourceText.split('\n')[starts[index] - 1].trim();
-        var compact = sourceLine.replace(/[ \t]/g, '');
-        if (/^(?:-{3,}|\*{3,}|_{3,})$/.test(compact) && sourceLine !== '---') {
-          editable = false;
+  function cacheCurrentRules(root) {
+    var rules = Array.from(root.querySelectorAll(':scope > hr[data-block]'));
+    if (rules.every(function (rule) { return editableRules.has(rule); })) return;
+    var lines = typeof sourceText === 'string' ? sourceText.split('\n') : [];
+    var starts = lines.length && window.BlockLineNumbers?.computeBlockStarts
+      ? window.BlockLineNumbers.computeBlockStarts(sourceText) : [];
+    var blocks = starts.length ? Array.from(root.children).filter(isCountableBlock) : [];
+    var blockIndex = new Map(blocks.map(function (block, index) { return [block, index]; }));
+    // Lists can split into more DOM blocks than source block starts. Pair by
+    // rule order only when every source marker has a top-level DOM counterpart.
+    var markers = lines.filter(function (line) {
+      if (/^(?: {4}|\t)/.test(line)) return false;
+      return /^(?:-{3,}|\*{3,}|_{3,})$/.test(line.trim().replace(/[ \t]/g, ''));
+    });
+    rules.forEach(function (rule, ruleIndex) {
+      if (editableRules.has(rule)) return;
+      var marker = null;
+      var index = blockIndex.get(rule);
+      if (index !== undefined && blocks.length === starts.length) {
+        var sourceLine = lines[starts[index] - 1]?.trim();
+        if (sourceLine && /^(?:-{3,}|\*{3,}|_{3,})$/.test(sourceLine.replace(/[ \t]/g, ''))) {
+          marker = sourceLine;
         }
       }
-    }
-    editableRules.set(rule, editable);
-    return editable;
+      if (marker === null && markers.length === rules.length) marker = markers[ruleIndex].trim();
+      // Unknown provenance is left alone rather than changing another spelling.
+      editableRules.set(rule, marker === '---');
+    });
+  }
+
+  function isEditableRule(root, rule) {
+    if (!editableRules.has(rule)) cacheCurrentRules(root);
+    return editableRules.get(rule) === true;
   }
 
   function revealRule(root, rule, atStart) {
@@ -97,6 +114,15 @@
     var root = editorElement();
     if (!root) return;
     if (root !== trackedRoot) {
+      if (trackedRoot) {
+        var oldRules = Array.from(trackedRoot.querySelectorAll(':scope > hr[data-block]'));
+        var newRules = Array.from(root.querySelectorAll(':scope > hr[data-block]'));
+        if (oldRules.length === newRules.length) {
+          oldRules.forEach(function (oldRule, index) {
+            if (editableRules.has(oldRule)) editableRules.set(newRules[index], editableRules.get(oldRule));
+          });
+        }
+      }
       trackedRoot = root;
       pendingParagraphs.clear();
       root.querySelectorAll(':scope > p[data-block]').forEach(function (paragraph) {
@@ -136,8 +162,17 @@
   }
 
   function setSource(text) {
-    sourceText = typeof text === 'string' ? text : null;
-    editableRules = new WeakMap();
+    if (typeof text !== 'string') {
+      // The host round trip can normalize *** to ---. Keep original DOM
+      // provenance before the serialized content is acknowledged.
+      var root = editorElement();
+      if (root) cacheCurrentRules(root);
+      sourcePending = true;
+      return;
+    }
+    if (!sourcePending) editableRules = new WeakMap();
+    sourceText = text;
+    sourcePending = false;
   }
 
   function install(editor, options) {
