@@ -156,8 +156,8 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
             const heightChanged = scrollHeight !== lastScrollHeight;
             lastScrollHeight = scrollHeight;
             // 短文档被编辑区最小高度撑住：上方换行会移动脚注，但 scrollHeight 不变。
-            const shortEditor = scrollHeight <= editorElement.clientHeight
-                && editorElement.clientHeight <= window.innerHeight;
+            const shortEditor = vditor.options.height !== "auto"
+                && scrollHeight <= editorElement.clientHeight;
             if (levelToApply === 2) {
                 syncButtons();
             } else if (levelToApply === 1 || heightChanged
@@ -174,7 +174,6 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
             if (record.type === "attributes") {
                 if ((record.target as Element).closest(FOOTNOTE_STRUCTURE_SELECTOR)) {
                     level = 2;
-                    break;
                 }
                 continue;
             }
@@ -186,7 +185,6 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
                     level = Math.max(level, parent === definition ? 2 : 1);
                 } else if (parent?.closest(REFERENCE_SELECTOR)) {
                     level = 2;
-                    break;
                 }
                 continue;
             }
@@ -194,13 +192,13 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
             if (definition) {
                 lastTextNodes.delete(definition);
                 level = 2;
-                break;
+                continue;
             }
             if ((record.target as Element).closest?.(REFERENCE_SELECTOR)
                 || Array.from(record.addedNodes).some(containsFootnoteStructure)
                 || Array.from(record.removedNodes).some(containsFootnoteStructure)) {
                 level = 2;
-                break;
+                continue;
             }
             if (Array.from(record.addedNodes).some((node) => node.nodeType === Node.ELEMENT_NODE)
                 || Array.from(record.removedNodes).some((node) => node.nodeType === Node.ELEMENT_NODE)) {

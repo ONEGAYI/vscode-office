@@ -281,6 +281,55 @@ test('footnote click, return, and list indentation keep the reference usable',
           assert.ok(trailingTextGap >= 0 && trailingTextGap <= 12,
             `return arrow must follow newly typed trailing text: gap ${trailingTextGap}`);
 
+          await page.setViewport({ width: 640, height: 220 });
+          await page.evaluate(() => vditor.setValue('Short[^xx]\n\n[^xx]: Definition\n'));
+          await page.waitForSelector(backSelector);
+          const tallEditorLayout = await page.evaluate(async ({ rootSelector, buttonSelector }) => {
+            const editor = document.querySelector(rootSelector);
+            const definition = editor.querySelector('[data-type="footnotes-def"], [data-type="footnotes-li"]');
+            const button = document.querySelector(buttonSelector);
+            const text = editor.querySelector('p').firstChild;
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const before = { definitionTop: definition.getBoundingClientRect().top,
+              buttonTop: button.getBoundingClientRect().top, scrollHeight: editor.scrollHeight,
+              clientHeight: editor.clientHeight, viewportHeight: innerHeight };
+            text.data += ' extra text'.repeat(12);
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const after = { definitionTop: definition.getBoundingClientRect().top,
+              buttonTop: button.getBoundingClientRect().top, scrollHeight: editor.scrollHeight };
+            return { before, after };
+          }, { rootSelector: root, buttonSelector: backSelector });
+          assert.ok(tallEditorLayout.before.clientHeight > tallEditorLayout.before.viewportHeight,
+            'fixed editor must be taller than the viewport in this regression case');
+          assert.equal(tallEditorLayout.after.scrollHeight, tallEditorLayout.before.scrollHeight,
+            'wrapped short content must leave the fixed scrollHeight unchanged');
+          assert.ok(tallEditorLayout.after.definitionTop - tallEditorLayout.before.definitionTop > 10,
+            'wrapping above the footnote must move its definition');
+          assert.ok(Math.abs((tallEditorLayout.after.buttonTop - tallEditorLayout.before.buttonTop)
+            - (tallEditorLayout.after.definitionTop - tallEditorLayout.before.definitionTop)) < 2,
+          `return arrow must follow wrapping in a fixed editor taller than the viewport: ${JSON.stringify(tallEditorLayout)}`);
+          await page.setViewport({ width: 640, height: 700 });
+
+          await page.evaluate(() => vditor.setValue('A[^aa]\n\nB[^bb]\n\n[^aa]: First\n[^bb]: Second\n'));
+          await page.waitForFunction(selector => document.querySelectorAll(selector).length === 2,
+            {}, backSelector);
+          const secondDefinitionGap = await page.evaluate(async ({ rootSelector, buttonSelector }) => {
+            const editor = document.querySelector(rootSelector);
+            const definitions = editor.querySelectorAll('[data-type="footnotes-def"], [data-type="footnotes-li"]');
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            definitions[0].querySelector('p').appendChild(document.createTextNode(' added'));
+            const secondTail = document.createTextNode(' added');
+            definitions[1].querySelector('p').appendChild(secondTail);
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const range = document.createRange();
+            range.setStart(secondTail, secondTail.data.length - 1);
+            range.setEnd(secondTail, secondTail.data.length);
+            return document.querySelectorAll(buttonSelector)[1].getBoundingClientRect().left
+              - range.getBoundingClientRect().right;
+          }, { rootSelector: root, buttonSelector: backSelector });
+          assert.ok(secondDefinitionGap >= 0 && secondDefinitionGap <= 12,
+            `all definitions changed in one mutation batch must refresh: gap ${secondDefinitionGap}`);
+
           await page.evaluate(() => vditor.setValue('Plain paragraph\n'));
           await page.waitForFunction(selector => document.querySelectorAll(selector).length === 0,
             {}, backSelector);
