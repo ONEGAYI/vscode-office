@@ -27,7 +27,10 @@ Office Viewer includes a full Git History workspace for exploring repositories w
 
 ## Markdown
 
-This extension replaces the default Markdown editor with a WYSIWYG editor.
+`.md` files open with VS Code's built-in editor by default. The WYSIWYG
+editor is opt-in: click the pencil button in the editor title bar, run
+**Switch markdown editor** from the command palette, or press `Ctrl Alt E`;
+run it again to switch back.
 
 To compare source text, select two `.md` or `.markdown` files in Explorer,
 right-click, and choose **Compare Selected Markdown as Text**. The comparison
@@ -42,13 +45,13 @@ until saved. If an older custom comparison does not expose its file pair and
 the file names are ambiguous, use the Explorer command to select the pair
 explicitly.
 
-To use the built-in VS Code Markdown editor instead, add this to your `settings.json`:
+To make the WYSIWYG editor the default again, add this to your `settings.json`:
 
 ```json
 {
     "workbench.editorAssociations": {
-        "*.md": "default",
-        "*.markdown": "default"
+        "*.md": "cweijan.markdownViewer",
+        "*.markdown": "cweijan.markdownViewer"
     }
 }
 ```
@@ -63,7 +66,7 @@ Shortcuts: Based on [shortcut.md](shortcut.md), plus:
 - Hard line break: `Shift+Enter` / `⇧ Enter`
 - Edit hyperlink: `Alt+Enter` / `^ Enter`
 - Set CodeMirror language: `Alt+Enter` / `^ Enter`
-- Edit in VS Code: `Ctrl Alt E` / `⌘ ^ E`
+- Switch markdown editor: `Ctrl Alt E` / `⌘ ^ E`
 - Paste as plain text: `Ctrl+Shift+V` / `⌘ ⇧ V`
 
 ## Other features

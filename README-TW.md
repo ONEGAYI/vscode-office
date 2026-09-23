@@ -27,15 +27,15 @@ Office Viewer 內建完整的 Git 歷史工作區，讓你無需離開 VS Code �
 
 ## Markdown
 
-整合 Markdown 所見即所得編輯器。
+`.md` 檔案預設使用 VS Code 內建編輯器開啟。所見即所得編輯器需手動啟用：點擊編輯器標題列的鉛筆按鈕，或按 `Ctrl Alt E`，再次執行即可切回。
 
-如需使用 VS Code 原生 Markdown 編輯器，請在 `settings.json` 中新增以下設定：
+如需恢復所見即所得編輯器為預設開啟方式，請在 `settings.json` 中新增以下設定：
 
 ```json
 {
     "workbench.editorAssociations": {
-        "*.md": "default",
-        "*.markdown": "default"
+        "*.md": "cweijan.markdownViewer",
+        "*.markdown": "cweijan.markdownViewer"
     }
 }
 ```
@@ -50,7 +50,7 @@ Office Viewer 內建完整的 Git 歷史工作區，讓你無需離開 VS Code �
 - 硬換行: `Shift+Enter` / `⇧ Enter`
 - 編輯超連結: `Alt+Enter` / `^ Enter`
 - 設定 CodeMirror 語言: `Alt+Enter` / `^ Enter`
-- 在 VS Code 中編輯: `Ctrl Alt E` / `⌘ ^ E`
+- 切換 Markdown 編輯器: `Ctrl Alt E` / `⌘ ^ E`
 - 貼上為純文字: `Ctrl+Shift+V` / `⌘ ⇧ V`
 
 ## 其他功能
