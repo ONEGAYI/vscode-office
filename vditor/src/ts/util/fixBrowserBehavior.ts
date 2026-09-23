@@ -638,6 +638,23 @@ export const listToggle = (vditor: IVditor, range: Range, type: string, cancel =
     restoreSelectionOffsets(vditor, savedSelection, restoreShift);
 };
 
+const spinListWithDefinitions = (vditor: IVditor, listElement: HTMLElement): string => {
+    const editorElement = vditor[vditor.currentMode].element;
+    const definitions = Array.from(editorElement.querySelectorAll(
+        '[data-type="footnotes-block"], [data-type="link-ref-defs-block"]',
+    )).filter((element) => !element.contains(listElement));
+    const html = listElement.outerHTML + definitions.map((element) => element.outerHTML).join("");
+    const rendered = vditor.currentMode === "wysiwyg"
+        ? vditor.lute.SpinVditorDOM(html)
+        : vditor.lute.SpinVditorIRDOM(html);
+    if (definitions.length === 0) {
+        return rendered;
+    }
+    const container = document.createElement("div");
+    container.innerHTML = rendered;
+    return container.querySelector(":scope > ul, :scope > ol")?.outerHTML || rendered;
+};
+
 export const listIndent = (vditor: IVditor, liElement: HTMLElement, range: Range) => {
     const previousElement = liElement.previousElementSibling;
     if (liElement && previousElement) {
@@ -670,11 +687,7 @@ export const listIndent = (vditor: IVditor, liElement: HTMLElement, range: Range
         previousElement.insertAdjacentHTML("beforeend",
             `<${liParentElement.tagName} data-block="0">${liHTML}</${liParentElement.tagName}>`);
 
-        if (vditor.currentMode === "wysiwyg") {
-            liParentElement.outerHTML = vditor.lute.SpinVditorDOM(liParentElement.outerHTML);
-        } else {
-            liParentElement.outerHTML = vditor.lute.SpinVditorIRDOM(liParentElement.outerHTML);
-        }
+        liParentElement.outerHTML = spinListWithDefinitions(vditor, liParentElement);
 
         setRangeByWbr(vditor[vditor.currentMode].element, range);
         const tempTopListElement = getTopList(range.startContainer);
@@ -740,11 +753,7 @@ export const listOutdent = (vditor: IVditor, liElement: HTMLElement, range: Rang
             liElements[0].insertAdjacentElement("beforeend", liParentAfterElement);
         }
 
-        if (vditor.currentMode === "wysiwyg") {
-            topListElement.outerHTML = vditor.lute.SpinVditorDOM(topListElement.outerHTML);
-        } else {
-            topListElement.outerHTML = vditor.lute.SpinVditorIRDOM(topListElement.outerHTML);
-        }
+        topListElement.outerHTML = spinListWithDefinitions(vditor, topListElement);
 
         setRangeByWbr(vditor[vditor.currentMode].element, range);
         const tempTopListElement = getTopList(range.startContainer);

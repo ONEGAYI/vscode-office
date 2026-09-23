@@ -56,6 +56,7 @@ window.VditorI18n = {
   'edit-mode-ir-desc': 'Markdown 原始碼即時預覽',
   'fileTypeError': '檔案類型不允許上傳',
   'footnoteRef': '腳註參考',
+  'footnoteBack': '返回引用處',
   'generate': '生成中',
   'headings': '標題',
   'heading1': '一級標題',

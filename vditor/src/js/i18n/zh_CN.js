@@ -66,6 +66,7 @@ window.VditorI18n = {
   'edit-mode-ir-desc': 'Markdown 源码即时预览',
   'fileTypeError': '文件类型不允许上传，请压缩后再试',
   'footnoteRef': '脚注标识',
+  'footnoteBack': '返回引用处',
   'generate': '生成中',
   'headings': '标题',
   'heading1': '一级标题',

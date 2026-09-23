@@ -579,6 +579,7 @@ class Vditor {
         this.clearCache();
 
         unbindTypewriterMode(this.vditor);
+        this.vditor.ir.unbindListener();
         this.vditor.wysiwyg.unbindListener();
     }
 

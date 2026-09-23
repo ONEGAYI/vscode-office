@@ -1,7 +1,8 @@
 import { isInsideCodeBlockChrome, isInsideCodeMirror, isPlantumlRenderImage } from "../codeBlock/codeMirrorManager";
+import { initFootnoteBackrefs } from "./footnoteBackrefs";
 import { hasClosestByAttribute, hasClosestByMatchTag } from "./hasClosest";
 
-/** 未配置 onLinkClick 时：Ctrl/⌘+单击、双击或中键触发默认跳转 */
+/** 普通链接默认需 Ctrl/⌘+单击、双击或中键；脚注引用由普通单击直接导航。 */
 export const shouldTriggerLinkClick = (event: MouseEvent) => {
     if (event.type === "auxclick" || event.type === "dblclick") {
         return true;
@@ -160,6 +161,7 @@ const defaultLinkClickBehavior = (payload: ILinkClickPayload) => {
 };
 
 export const linkClickEvent = (vditor: IVditor, editorElement: HTMLElement) => {
+    const footnoteBackrefs = initFootnoteBackrefs(vditor, editorElement);
     const onPointer = (event: MouseEvent) => {
         const payload = resolveLinkClickFromTarget(event.target, vditor);
         if (!payload) {
@@ -171,6 +173,12 @@ export const linkClickEvent = (vditor: IVditor, editorElement: HTMLElement) => {
         }
 
         event.stopPropagation();
+
+        if (payload.type === "footnote-ref" && event.type === "click" && event.button === 0) {
+            if (footnoteBackrefs.navigate(payload.element, payload.href)) {
+                event.preventDefault();
+            }
+        }
 
         const onLinkClick = vditor.options.onLinkClick;
         if (typeof onLinkClick === "function") {
@@ -194,4 +202,10 @@ export const linkClickEvent = (vditor: IVditor, editorElement: HTMLElement) => {
     editorElement.addEventListener("click", onPointer);
     editorElement.addEventListener("auxclick", onPointer);
     editorElement.addEventListener("dblclick", onPointer);
+    return () => {
+        editorElement.removeEventListener("click", onPointer);
+        editorElement.removeEventListener("auxclick", onPointer);
+        editorElement.removeEventListener("dblclick", onPointer);
+        footnoteBackrefs.dispose();
+    };
 };
