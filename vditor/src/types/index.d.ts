@@ -743,5 +743,6 @@ interface IVditor {
         processTimeoutId: number,
         afterRenderLastAt: number,
         hlToolbarTimeoutId: number,
+        unbindListener(): void,
     };
 }

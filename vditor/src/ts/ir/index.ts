@@ -56,6 +56,7 @@ class IR {
     public composingLock: boolean = false;
     public preventInput: boolean;
     private impreciseLineClickHandled = false;
+    private disposeLinkClick: () => void;
 
     constructor(vditor: IVditor) {
         const divElement = document.createElement("div");
@@ -73,7 +74,7 @@ class IR {
         initBlockHandle(vditor, divElement, this.element);
         initTableHandle(vditor, divElement, this.element);
 
-        linkClickEvent(vditor, divElement);
+        this.disposeLinkClick = linkClickEvent(vditor, divElement);
         focusEvent(vditor, this.element);
         dblclickEvent(vditor, this.element);
         blurEvent(vditor, this.element);
@@ -85,6 +86,10 @@ class IR {
         cutEvent(vditor, this.element, this.copy);
         bindImageLoadingState(this.element);
         setupLazyCodeMirrorObserver(vditor);
+    }
+
+    public unbindListener() {
+        this.disposeLinkClick();
     }
 
     private copy(event: ClipboardEvent, vditor: IVditor) {

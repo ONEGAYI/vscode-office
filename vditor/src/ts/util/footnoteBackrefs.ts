@@ -2,6 +2,7 @@ import { scrollToBlock } from "./scrollToBlock";
 
 const DEFINITION_SELECTOR = '[data-type="footnotes-def"], [data-type="footnotes-li"]';
 const REFERENCE_SELECTOR = '[data-type="footnotes-ref"]';
+const FOOTNOTE_STRUCTURE_SELECTOR = `${DEFINITION_SELECTOR}, ${REFERENCE_SELECTOR}, [data-type="footnotes-block"]`;
 const BACK_BUTTON_CLASS = "vditor-footnotes__goto-ref";
 
 const normalizeLabel = (label: string) => label.trim().replace(/^\^/, "");
@@ -46,8 +47,13 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
     const findReferences = (label: string) => Array.from(
         editorElement.querySelectorAll<HTMLElement>(REFERENCE_SELECTOR),
     ).filter((reference) => normalizeLabel(reference.getAttribute("data-footnotes-label") || "") === label);
+    const resizeObserver = typeof ResizeObserver === "function"
+        ? new ResizeObserver(() => queueUpdate(false)) : null;
 
     const positionButtons = () => {
+        if (buttons.size === 0) {
+            return;
+        }
         const hostRect = host.getBoundingClientRect();
         const editorRect = editorElement.getBoundingClientRect();
         for (const [definition, button] of buttons) {
@@ -86,6 +92,7 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
         const active = new Set(definitions);
         for (const [definition, button] of buttons) {
             if (!active.has(definition)) {
+                resizeObserver?.unobserve(definition);
                 button.remove();
                 buttons.delete(definition);
             }
@@ -112,26 +119,60 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
             };
             host.appendChild(button);
             buttons.set(definition, button);
+            resizeObserver?.observe(definition);
         }
         positionButtons();
     };
 
-    let updateQueued = false;
-    const queueUpdate = () => {
-        if (updateQueued) {
+    let updateFrame = 0;
+    let syncNeeded = false;
+    const queueUpdate = (sync: boolean) => {
+        if (!sync && buttons.size === 0) {
             return;
         }
-        updateQueued = true;
-        requestAnimationFrame(() => {
-            updateQueued = false;
-            syncButtons();
+        syncNeeded ||= sync;
+        if (updateFrame) {
+            return;
+        }
+        updateFrame = requestAnimationFrame(() => {
+            updateFrame = 0;
+            if (syncNeeded) {
+                syncNeeded = false;
+                syncButtons();
+            } else {
+                positionButtons();
+            }
         });
     };
-    const observer = new MutationObserver(queueUpdate);
+    const containsFootnoteStructure = (node: Node) => node instanceof Element
+        && (node.matches(FOOTNOTE_STRUCTURE_SELECTOR) || !!node.querySelector(FOOTNOTE_STRUCTURE_SELECTOR));
+    const observer = new MutationObserver((records) => {
+        const needsSync = records.some((record) => {
+            if (record.type === "attributes") {
+                return true;
+            }
+            if (record.type === "characterData") {
+                return !!record.target.parentElement?.closest(FOOTNOTE_STRUCTURE_SELECTOR);
+            }
+            if ((record.target as Element).closest?.(FOOTNOTE_STRUCTURE_SELECTOR)) {
+                return true;
+            }
+            return Array.from(record.addedNodes).some(containsFootnoteStructure)
+                || Array.from(record.removedNodes).some(containsFootnoteStructure);
+        });
+        queueUpdate(needsSync);
+    });
     observer.observe(editorElement, { childList: true, subtree: true, characterData: true, attributes: true,
         attributeFilter: ["data-marker", "data-footnotes-label"] });
-    editorElement.addEventListener("scroll", positionButtons, { passive: true });
-    queueUpdate();
+    const onLayoutChange = () => queueUpdate(false);
+    editorElement.addEventListener("scroll", onLayoutChange, { passive: true });
+    window.addEventListener("resize", onLayoutChange);
+    document.fonts?.addEventListener("loadingdone", onLayoutChange);
+    resizeObserver?.observe(editorElement);
+    const styleObserver = new MutationObserver(onLayoutChange);
+    styleObserver.observe(document.head, { childList: true, subtree: true, characterData: true,
+        attributes: true, attributeFilter: ["href", "media"] });
+    queueUpdate(true);
 
     return {
         navigate(reference: HTMLElement, rawLabel: string) {
@@ -143,6 +184,22 @@ export const initFootnoteBackrefs = (vditor: IVditor, host: HTMLElement) => {
             lastReferences.set(label, { element: reference, index: references.indexOf(reference) });
             positionButtons();
             return true;
+        },
+        dispose() {
+            observer.disconnect();
+            styleObserver.disconnect();
+            resizeObserver?.disconnect();
+            editorElement.removeEventListener("scroll", onLayoutChange);
+            window.removeEventListener("resize", onLayoutChange);
+            document.fonts?.removeEventListener("loadingdone", onLayoutChange);
+            if (updateFrame) {
+                cancelAnimationFrame(updateFrame);
+            }
+            for (const button of buttons.values()) {
+                button.remove();
+            }
+            buttons.clear();
+            lastReferences.clear();
         },
     };
 };

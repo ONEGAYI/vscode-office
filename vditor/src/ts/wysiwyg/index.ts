@@ -72,6 +72,7 @@ class WYSIWYG {
     public composingLock = false;
     private scrollListener: () => void;
     private impreciseLineClickHandled = false;
+    private disposeLinkClick: () => void;
 
     constructor(vditor: IVditor) {
         const divElement = document.createElement("div");
@@ -89,7 +90,7 @@ class WYSIWYG {
         initBlockHandle(vditor, divElement, this.element);
         initTableHandle(vditor, divElement, this.element);
 
-        linkClickEvent(vditor, divElement);
+        this.disposeLinkClick = linkClickEvent(vditor, divElement);
         focusEvent(vditor, this.element);
         dblclickEvent(vditor, this.element);
         blurEvent(vditor, this.element);
@@ -105,6 +106,7 @@ class WYSIWYG {
 
     public unbindListener() {
         window.removeEventListener("scroll", this.scrollListener);
+        this.disposeLinkClick?.();
     }
 
     private isAbsoluteEditPopover() {

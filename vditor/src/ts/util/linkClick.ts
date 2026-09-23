@@ -202,4 +202,10 @@ export const linkClickEvent = (vditor: IVditor, editorElement: HTMLElement) => {
     editorElement.addEventListener("click", onPointer);
     editorElement.addEventListener("auxclick", onPointer);
     editorElement.addEventListener("dblclick", onPointer);
+    return () => {
+        editorElement.removeEventListener("click", onPointer);
+        editorElement.removeEventListener("auxclick", onPointer);
+        editorElement.removeEventListener("dblclick", onPointer);
+        footnoteBackrefs.dispose();
+    };
 };

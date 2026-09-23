@@ -97,6 +97,53 @@ test('footnote click, return, and list indentation keep the reference usable',
           assert.ok(returnPlacement.verticalDelta < 12,
             `return arrow must share the last footnote line: ${JSON.stringify(returnPlacement)}`);
           assert.ok(returnPlacement.visible, 'return action must be visible in the editor viewport');
+          await page.setViewport({ width: 640, height: 700 });
+          await page.waitForFunction(({ rootSelector, buttonSelector }) => {
+            const definition = document.querySelector(rootSelector + ' [data-type="footnotes-def"], '
+              + rootSelector + ' [data-type="footnotes-li"]');
+            const walker = document.createTreeWalker(definition, NodeFilter.SHOW_TEXT);
+            let lastText;
+            for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+              if (node.textContent.trim()) lastText = node;
+            }
+            const range = document.createRange();
+            range.setStart(lastText, lastText.textContent.length - 1);
+            range.setEnd(lastText, lastText.textContent.length);
+            const lastRect = range.getBoundingClientRect();
+            const buttonRect = document.querySelector(buttonSelector).getBoundingClientRect();
+            return Math.abs(buttonRect.left - lastRect.right - 5) < 2
+              && Math.abs((buttonRect.top + buttonRect.bottom - lastRect.top - lastRect.bottom) / 2) < 12;
+          }, { timeout: 1500 }, { rootSelector: root, buttonSelector: backSelector });
+          const beforeDefinitionLeft = await page.$eval(root + ' [data-type="footnotes-def"], ' + root + ' [data-type="footnotes-li"]',
+            el => el.getBoundingClientRect().left);
+          await page.evaluate(rootSelector => {
+            window.blockFootnoteScroll = event => event.stopImmediatePropagation();
+            document.querySelector(rootSelector).addEventListener('scroll', window.blockFootnoteScroll, true);
+          }, root);
+          await page.addStyleTag({ content: '.vditor-ir [data-type="footnotes-def"], '
+            + '.vditor-wysiwyg [data-type="footnotes-li"] { transform: translateX(40px); }' });
+          const afterDefinitionLeft = await page.$eval(root + ' [data-type="footnotes-def"], ' + root + ' [data-type="footnotes-li"]',
+            el => el.getBoundingClientRect().left);
+          assert.ok(Math.abs(afterDefinitionLeft - beforeDefinitionLeft - 40) < 2,
+            'the custom CSS must move the footnote to exercise the positioning contract');
+          await page.waitForFunction(({ rootSelector, buttonSelector }) => {
+            const definition = document.querySelector(rootSelector + ' [data-type="footnotes-def"], '
+              + rootSelector + ' [data-type="footnotes-li"]');
+            const walker = document.createTreeWalker(definition, NodeFilter.SHOW_TEXT);
+            let lastText;
+            for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+              if (node.textContent.trim()) lastText = node;
+            }
+            const range = document.createRange();
+            range.setStart(lastText, lastText.textContent.length - 1);
+            range.setEnd(lastText, lastText.textContent.length);
+            return Math.abs(document.querySelector(buttonSelector).getBoundingClientRect().left
+              - range.getBoundingClientRect().right - 5) < 2;
+          }, { timeout: 1500 }, { rootSelector: root, buttonSelector: backSelector });
+          await page.evaluate(rootSelector => {
+            document.querySelector(rootSelector).removeEventListener('scroll', window.blockFootnoteScroll, true);
+            delete window.blockFootnoteScroll;
+          }, root);
           await page.$eval(root, editor => { editor.scrollTop = 0; });
           await page.waitForFunction(selector => document.querySelector(selector).hidden, {}, backSelector);
           await page.$eval(root, editor => { editor.scrollTop = editor.scrollHeight; });
@@ -172,6 +219,15 @@ test('footnote click, return, and list indentation keep the reference usable',
           assert.ok(returnedToSecond, 'return arrow goes back to the most recently clicked reference');
           assert.equal(await page.$$eval(backSelector, els => els.length), 1,
             'one permanent arrow serves repeated references to the same footnote');
+          await page.evaluate(() => vditor.setValue('Plain paragraph\n'));
+          await page.waitForFunction(selector => document.querySelectorAll(selector).length === 0,
+            {}, backSelector);
+          await page.evaluate(() => vditor.setValue('New[^yy]\n\n[^yy]: Added footnote\n'));
+          await page.waitForFunction(selector => document.querySelectorAll(selector).length === 1,
+            {}, backSelector);
+          await page.evaluate(() => vditor.destroy());
+          assert.equal(await page.$$eval(backSelector, els => els.length), 0,
+            'destroy removes the permanent return action');
         } finally { await page.close(); }
       });
     }
