@@ -255,6 +255,38 @@ describe('list-ops: 空段落有序列表插入', { skip: DIST_READY ? false : '
   });
 });
 
+describe('list-ops: 空项序列化只修改真实列表项', { skip: DIST_READY ? false : 'vditor/dist 未构建：先在 vditor/ 目录执行构建' }, () => {
+  for (const mode of ['wysiwyg', 'ir']) {
+    it(`${mode}: 链接标题中的 <li></li> 不被改写`, async () => {
+      const ctx = await boot('[x](https://x "<li></li>")\n', { mode });
+      try {
+        const method = mode === 'wysiwyg' ? 'VditorDOM2Md' : 'VditorIRDOM2Md';
+        const lute = ctx.window.vditor.vditor.lute;
+        const original = lute[method];
+        let serializedHTML;
+        lute[method] = function (html) {
+          serializedHTML = html;
+          return original.call(this, html);
+        };
+        const actual = ctx.window.vditor.getValue();
+        if (mode === 'wysiwyg') {
+          assert.ok(serializedHTML.includes('title="<li></li>"'),
+            '送入 Lute 的链接标题应原样保留：' + JSON.stringify(serializedHTML));
+          assert.ok(actual.includes('&lt;li&gt;&lt;/li&gt;'),
+            '导出的链接标题应原样保留：' + JSON.stringify(actual));
+        } else {
+          // Lute 的 ir 解析会把标题内的 HTML 片段变成游离 li；本修复
+          // 不应再把这个非列表节点改写成空列表项。
+          assert.ok(serializedHTML.includes('<li></li>'),
+            '非列表 li 不应被加上 br：' + JSON.stringify(serializedHTML));
+        }
+      } finally {
+        ctx.window.close();
+      }
+    });
+  }
+});
+
 // ── K：无序列表快捷键 ⇧⌘O ───────────────────────────────────────────────
 
 describe('list-ops: unordered list hotkey (K)', { skip: DIST_READY ? false : 'vditor/dist 未构建：先在 vditor/ 目录执行构建' }, () => {

@@ -98,18 +98,18 @@ test('空段落触发有序列表后可见 1. 且光标留在列表项中',
             assert.equal(after.caretInLi, true, '光标应留在列表项中：' + JSON.stringify(after));
             assert.match(after.value, /^1\.[ \t]*$/m, '保存的 Markdown 应含空列表项：' + JSON.stringify(after));
 
-            await page.evaluate(() => vditor.setValue(vditor.getValue()));
+            await page.keyboard.type('x');
+            const immediate = await page.evaluate(() => vditor.getValue());
+            assert.match(immediate, /^1\. x$/m,
+              '转换后沿原光标直接输入应进入列表正文：' + JSON.stringify(immediate));
+
+            await page.evaluate(value => vditor.setValue(value), after.value);
             const reloaded = await page.evaluate(selector => ({
               value: vditor.getValue(),
               item: document.querySelector(selector + ' > ol > li')?.outerHTML,
             }), editor);
             assert.ok(reloaded.item, '重载后空列表项应保留：' + JSON.stringify(reloaded));
             assert.match(reloaded.value, /^1\.[ \t]*$/m, JSON.stringify(reloaded));
-
-            await page.click(editor + ' > ol > li');
-            await page.keyboard.type('x');
-            const typed = await page.evaluate(() => vditor.getValue());
-            assert.match(typed, /^1\. x$/m, '在空列表项继续输入应进入正文：' + JSON.stringify(typed));
           } finally { await page.close(); }
         });
       }
