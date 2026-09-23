@@ -359,6 +359,11 @@ describe('block-numbers: block scanner contract (S)', { skip: MODULE_READY ? fal
     assert.deepEqual(api.computeBlockStarts('before\n+\nafter\n'), [1]);
     assert.deepEqual(api.computeBlockStarts('before\n1.\nafter\n'), [1]);
   });
+
+  it('S17: each link reference definition has its own source line', () => {
+    assert.deepEqual(api.computeBlockStarts('# H\n\nParagraph.\n\n[one]: https://example.com/one\n[two]: https://example.com/two\n'),
+      [1, 3, 5, 6]);
+  });
 });
 
 // 宿主原文与 Lute 导出文本的空行不同：第一张表前一行空行，第二张表前两行。
@@ -612,6 +617,19 @@ describe('block-numbers: module contract on IR editor (N)', { skip: DIST_READY &
       b3.window.close();
     }
   });
+
+  it('N7: link reference definitions do not hide all paragraph numbers', async () => {
+    const source = '# H\n\nParagraph.\n\n[one]: https://example.com/one\n[two]: https://example.com/two\n';
+    const withRefs = await boot(source);
+    try {
+      withRefs.window.eval(fs.readFileSync(MODULE_PATH, 'utf8'));
+      withRefs.window.BlockLineNumbers.install(withRefs.window.vditor, { sourceText: source });
+      await sleep(120);
+      assert.deepEqual(linenosOf(withRefs.document), [1, 3, 5, 6]);
+    } finally {
+      withRefs.window.close();
+    }
+  });
 });
 
 // ── D：扫描器块数与 Lute 顶层块数对照 ───────────────────────────────────
@@ -655,6 +673,7 @@ describe('block-numbers: scanner parity with real Lute (D)', { skip: DIST_READY 
     ['math-inline-block', '$$a=1$$\n\nafter\n'],
     ['mixed-kinds-lists', '- a\n- b\n\n1. one\n2. two\n'],
     ['same-kind-loose', '- a\n\n- b\n'],
+    ['link-reference-definitions', '# H\n\nParagraph.\n\n[one]: https://example.com/one\n[two]: https://example.com/two\n'],
   ];
 
   for (const [name, md] of PARITY_CASES) {
