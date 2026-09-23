@@ -35,27 +35,31 @@ test('空段落触发有序列表后可见 1. 且光标留在列表项中',
     const browser = await puppeteer.launch({ executablePath: browserPath, headless: true });
     t.after(() => browser.close());
     const base = `http://127.0.0.1:${server.address().port}`;
+    const bootPage = async (mode, value) => {
+      const page = await browser.newPage();
+      await page.goto(base + '/');
+      await page.addStyleTag({ url: base + '/vditor/dist/index.css' });
+      await page.addStyleTag({ url: base + '/resource/markdown/index.css' });
+      await page.addScriptTag({ url: base + '/vditor/dist/js/lute/lute.min.js', id: 'vditorLuteScript' });
+      await page.addScriptTag({ url: base + '/vditor/dist/js/i18n/en_US.js' });
+      await page.addScriptTag({ url: base + '/vditor/dist/index.min.js' });
+      await page.addScriptTag({ url: base + '/resource/markdown/list-marker.js' });
+      await page.evaluate(({ mode, base, value }) => new Promise(resolve => {
+        window.vditor = new Vditor('app', {
+          value, mode,
+          i18n: VditorI18n, cdn: base + '/vditor', height: 600,
+          cache: { enable: false }, toolbar: ['ordered-list'],
+          after() { ListMarkerLive.install(window.vditor); resolve(); },
+        });
+      }), { mode, base, value });
+      return page;
+    };
 
     for (const mode of ['wysiwyg', 'ir']) {
       for (const action of ['hotkey', 'toolbar']) {
         await t.test(`${mode} ${action}`, async () => {
-          const page = await browser.newPage();
+          const page = await bootPage(mode, '1\n\n2\n');
           try {
-            await page.goto(base + '/');
-            await page.addStyleTag({ url: base + '/vditor/dist/index.css' });
-            await page.addStyleTag({ url: base + '/resource/markdown/index.css' });
-            await page.addScriptTag({ url: base + '/vditor/dist/js/lute/lute.min.js', id: 'vditorLuteScript' });
-            await page.addScriptTag({ url: base + '/vditor/dist/js/i18n/en_US.js' });
-            await page.addScriptTag({ url: base + '/vditor/dist/index.min.js' });
-            await page.addScriptTag({ url: base + '/resource/markdown/list-marker.js' });
-            await page.evaluate(({ mode, base }) => new Promise(resolve => {
-              window.vditor = new Vditor('app', {
-                value: '1\n\n2\n', mode,
-                i18n: VditorI18n, cdn: base + '/vditor', height: 600,
-                cache: { enable: false }, toolbar: ['ordered-list'],
-                after() { ListMarkerLive.install(window.vditor); resolve(); },
-              });
-            }), { mode, base });
             const editor = `.vditor-${mode} .vditor-reset`;
             await page.click(editor + ' > p:first-of-type');
             await page.keyboard.press('End');
@@ -103,13 +107,21 @@ test('空段落触发有序列表后可见 1. 且光标留在列表项中',
             assert.match(immediate, /^1\. x$/m,
               '转换后沿原光标直接输入应进入列表正文：' + JSON.stringify(immediate));
 
-            await page.evaluate(value => vditor.setValue(value), after.value);
-            const reloaded = await page.evaluate(selector => ({
-              value: vditor.getValue(),
-              item: document.querySelector(selector + ' > ol > li')?.outerHTML,
-            }), editor);
-            assert.ok(reloaded.item, '重载后空列表项应保留：' + JSON.stringify(reloaded));
-            assert.match(reloaded.value, /^1\.[ \t]*$/m, JSON.stringify(reloaded));
+            // 用独立的新页面载入刚才导出的 Markdown，模拟重新打开。
+            const reopened = await bootPage(mode, after.value);
+            try {
+              const reloaded = await reopened.evaluate(selector => ({
+                value: vditor.getValue(),
+                item: document.querySelector(selector + ' > ol > li')?.outerHTML,
+              }), editor);
+              assert.ok(reloaded.item, '重载后空列表项应保留：' + JSON.stringify(reloaded));
+              assert.match(reloaded.value, /^1\.[ \t]*$/m, JSON.stringify(reloaded));
+              await reopened.click(editor + ' > ol > li');
+              await reopened.keyboard.type('y');
+              const typedAfterReload = await reopened.evaluate(() => vditor.getValue());
+              assert.match(typedAfterReload, /^1\. y$/m,
+                '重载后输入应进入列表正文：' + JSON.stringify({ reloaded, typedAfterReload }));
+            } finally { await reopened.close(); }
           } finally { await page.close(); }
         });
       }
