@@ -37,22 +37,27 @@ test('空段落触发有序列表后可见 1. 且光标留在列表项中',
     const base = `http://127.0.0.1:${server.address().port}`;
     const bootPage = async (mode, value) => {
       const page = await browser.newPage();
-      await page.goto(base + '/');
-      await page.addStyleTag({ url: base + '/vditor/dist/index.css' });
-      await page.addStyleTag({ url: base + '/resource/markdown/index.css' });
-      await page.addScriptTag({ url: base + '/vditor/dist/js/lute/lute.min.js', id: 'vditorLuteScript' });
-      await page.addScriptTag({ url: base + '/vditor/dist/js/i18n/en_US.js' });
-      await page.addScriptTag({ url: base + '/vditor/dist/index.min.js' });
-      await page.addScriptTag({ url: base + '/resource/markdown/list-marker.js' });
-      await page.evaluate(({ mode, base, value }) => new Promise(resolve => {
-        window.vditor = new Vditor('app', {
-          value, mode,
-          i18n: VditorI18n, cdn: base + '/vditor', height: 600,
-          cache: { enable: false }, toolbar: ['ordered-list'],
-          after() { ListMarkerLive.install(window.vditor); resolve(); },
-        });
-      }), { mode, base, value });
-      return page;
+      try {
+        await page.goto(base + '/');
+        await page.addStyleTag({ url: base + '/vditor/dist/index.css' });
+        await page.addStyleTag({ url: base + '/resource/markdown/index.css' });
+        await page.addScriptTag({ url: base + '/vditor/dist/js/lute/lute.min.js', id: 'vditorLuteScript' });
+        await page.addScriptTag({ url: base + '/vditor/dist/js/i18n/en_US.js' });
+        await page.addScriptTag({ url: base + '/vditor/dist/index.min.js' });
+        await page.addScriptTag({ url: base + '/resource/markdown/list-marker.js' });
+        await page.evaluate(({ mode, base, value }) => new Promise(resolve => {
+          window.vditor = new Vditor('app', {
+            value, mode,
+            i18n: VditorI18n, cdn: base + '/vditor', height: 600,
+            cache: { enable: false }, toolbar: ['ordered-list'],
+            after() { ListMarkerLive.install(window.vditor); resolve(); },
+          });
+        }), { mode, base, value });
+        return page;
+      } catch (error) {
+        await page.close().catch(() => undefined);
+        throw error;
+      }
     };
 
     for (const mode of ['wysiwyg', 'ir']) {
