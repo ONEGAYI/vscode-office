@@ -148,6 +148,7 @@ handler.on("open", async (md) => {
     after() {
       const { viewerSettings } = md;
       ListMarkerLive.install(editor);
+      HorizontalRuleLive.install(editor);
       document.body.classList.toggle('vmd-heading-badges-off', markdownHeadingBadges === false);
       BlockLineNumbers.install(editor, {
         enabled: markdownBlockLineNumbers !== false,

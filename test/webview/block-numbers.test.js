@@ -389,6 +389,7 @@ async function bootWired(content, mode = 'ir') {
   let shortcutSave;
   window.handler = handler;
   window.ListMarkerLive = { install() {} };
+  window.HorizontalRuleLive = { install() {} };
   window.Vditor = function (_id, config) { options = config; return window.vditor; };
   const imageModule = { exports: {} };
   new window.Function('module', 'exports', transformSync(fs.readFileSync(path.join(ROOT, 'resource/markdown/imagePath.js'), 'utf8'), { format: 'cjs' }).code)(imageModule, imageModule.exports);
